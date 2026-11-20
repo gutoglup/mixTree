@@ -14,6 +14,7 @@ flowchart LR
     X32[X32Client<br/>src/x32.js]
     CODEC[Codec OSC<br/>src/osc.js]
     ENG[MixEngine<br/>src/engine.js]
+    MAP[automap<br/>src/automap.js]
     HTTP[HTTP estático<br/>:3000]
     WS[WebSocketServer<br/>ws]
     SIM[Simulador<br/>src/simulator.js]
@@ -22,13 +23,16 @@ flowchart LR
 
   UI[public/index.html<br/>Mac / iPhone]
 
-  OSC -- "/meters/1, /meters/2,<br/>/ch/NN/mix/BB/level, /info" --> X32
+  OSC -- "/meters/1, /meters/2,<br/>/ch/NN/mix/BB/level, /info,<br/>/ch/NN/config/name|icon|color" --> X32
   X32 -- "/ch/NN/mix/BB/level (escrita)<br/>/xremote, /meters (assinatura)" --> OSC
   X32 <--> CODEC
   X32 -- eventos --> ENG
   ENG -- ações {ch, db} --> X32
   SIM -. "substitui a mesa (--sim)" .- X32
   CFG --> ENG
+  X32 -- "patch (nome/ícone)" --> MAP
+  MAP -- "sugestão / divergência" --> WS
+  MAP -- "mapa confirmado" --> CFG
   CFG --> X32
   HTTP --> UI
   WS -- "estado a cada 150 ms" --> UI
@@ -41,6 +45,8 @@ flowchart LR
 | `src/osc.js` | Codificação/decodificação OSC 1.0 (`i`, `f`, `s`, `b`), lei de fader da X32, blobs de meters | Nenhum |
 | `src/x32.js` | Cliente UDP; assinatura de `/xremote` e meters (renovada a cada 8 s); leitura de nomes, envios e estado `on`; descoberta de mesas por broadcast `/info` | Rede (UDP) |
 | `src/engine.js` | Motor de regras puro: envelopes de nível, detecção de solista, cálculo de alvos, rampas, travas e histórico. O relógio é injetado via `now` | Nenhum |
+| `src/automap.js` | Classificação de canais por nome e ícone, sugestão de mapa, confirmação (âncora, `seen`) e checagem de troca de patch | Nenhum |
+| `src/configfile.js` | Substituição de uma chave de primeiro nível do `config.json` sensível a strings, preservando o resto do arquivo | Nenhum |
 | `src/simulator.js` | Mesa falsa que responde OSC e gera meters de uma música sintética em seções de 20 s | Rede (UDP local) |
 | `src/server.js` | Composição: liga cliente, motor, HTTP e WebSocket; troca de mesa e de bus em tempo de execução; persistência pontual em `config.json` | Rede, sistema de arquivos |
 | `public/index.html` | Interface sem framework (HTML, CSS e JS inline) | — |
@@ -97,7 +103,7 @@ Para cada canal, `setChannelMeters` (`src/engine.js:158`) mantém dois envelopes
 
 Um canal é considerado **ativo** quando os dois envelopes estão acima de `gateDb`. Ele está **caindo** (fim de frase) quando `fastDb < envDb − fadeDb`; nessa condição nenhum envio é aumentado.
 
-A **referência do teclado** (`keyRefPow`) é a média de potência dos canais `keyboard` (mono ou estéreo), filtrada com `keyRefTauSec` (8 s) e atualizada apenas enquanto o teclado toca. O motor só age depois de `warmupSec` segundos de teclado ativo.
+A **referência da âncora** (`keyRefPow`; o teclado, por padrão) é a média de potência dos canais `anchor` (mono ou estéreo), filtrada com `keyRefTauSec` (8 s) e atualizada apenas enquanto o teclado toca. O motor só age depois de `warmupSec` segundos de teclado ativo.
 
 A contribuição de um canal no fone é estimada por:
 
@@ -129,7 +135,7 @@ Implementado em `_computeTargets` (`src/engine.js:357`) e `_vocalTarget` (`src/e
 ```mermaid
 flowchart TD
   A[Canal] --> B{role}
-  B -- keyboard --> K[Referência: nunca recebe alvo]
+  B -- anchor --> K[Referência: nunca recebe alvo]
   B -- vocal / ref --> C{Envio lido?}
   C -- não --> W[aguardando leitura da mesa]
   C -- sim --> D{Travado por ajuste manual?}
@@ -210,8 +216,8 @@ Nesse caso o canal é travado por `manualHoldSec`, o novo valor passa a ser a mi
 
 A escrita é restrita em duas camadas independentes:
 
-1. **Motor** (`src/engine.js`): canais `keyboard` nunca recebem alvo, não são aprovados e não entram em `restoreBase`. O teclado só muda por `adjustKeyboard`, chamado exclusivamente pela mensagem `keyboard` da página.
-2. **Cliente** (`src/x32.js:96`): `setSend` descarta qualquer canal fora de `config.channels` e qualquer canal de teclado. O teclado tem um método separado, `setKeyboardSend`.
+1. **Motor** (`src/engine.js`): canais `anchor` (ou `keyboard`, normalizado para `anchor`) nunca recebem alvo, não são aprovados e não entram em `restoreBase`. A âncora só muda por `adjustKeyboard`, chamado exclusivamente pela mensagem `anchor` (ou `keyboard`) da página. Com `setBlock(motivo)` ativo, o modo fica em `off` e `setMode` recusa `assist`/`auto`.
+2. **Cliente** (`src/x32.js`): `setSend` descarta qualquer canal fora do mapa atual e qualquer canal âncora. A âncora tem um método separado, `setKeyboardSend`. `setChannels` troca o mapa em execução e recalcula as duas listas.
 
 O único endereço escrito em ambos os casos é `/ch/NN/mix/BB/level`, onde `BB` é o bus configurado.
 
@@ -223,7 +229,39 @@ O único endereço escrito em ambos os casos é `/ch/NN/mix/BB/level`, onde `BB`
 | Trocar bus do fone | `setBus` (`src/server.js:134`) | `resetBus()`: zera envios e travas; modo volta a `off`; a referência do teclado é mantida | `bus` gravado em `config.json` (apenas mesa real) |
 | Procurar mesas | `scanMixers` (`src/x32.js:144`) | — | — |
 
-A gravação em `config.json` substitui apenas o trecho alterado por expressão regular, preservando a formatação do restante do arquivo.
+A gravação em `config.json` substitui apenas o trecho alterado (por expressão regular para `mixer` e `bus`; por `replaceTopLevel` de `src/configfile.js` para `channels`), preservando a formatação do restante do arquivo.
+
+## 9.1 Mapa de canais dinâmico
+
+```mermaid
+sequenceDiagram
+  participant U as Página
+  participant S as server.js
+  participant X as X32Client
+  participant M as Mesa
+  participant A as automap.js
+  X->>M: /ch/01..32/config/name, icon, color, mix/BB/on (scanChannels)
+  M-->>X: respostas (e, via /xremote, toda alteração de nome/ícone)
+  X-->>S: eventos name / icon / color / sendOn → patch[1..32]
+  S->>A: diffMap(config.channels, patch)
+  A-->>S: divergências → engine.setBlock(...) + patchDiffs no estado
+  U->>S: proposeMap
+  S->>A: buildProposal(patch, { previous, rules, icons, busName })
+  S-->>U: proposal { rows[32], anchorGroup, busGroup }
+  U->>S: applyMap { anchorGroup, rows }
+  S->>A: finalizeMap(rows, anchorGroup, { patch, previous })
+  A-->>S: channels (com seen) ou erros
+  S->>S: novo MixEngine (modo off), x32.setChannels, grava config (mesa real)
+  S-->>U: mapResult { ok, error }
+```
+
+Classificação (`classifyChannel`): o nome é normalizado (sem acentos, maiúsculas) e testado contra as regras em ordem — a primeira que casa vence; `role: "ignore"` deixa o canal de fora. Só se nenhuma regra casar é que o ícone é consultado. O nome vem antes porque é texto explícito do operador e porque a numeração dos ícones precisa ser conferida por firmware.
+
+Sugestão (`buildProposal`): para cada canal 1–32, se ele já está no mapa e o nome não mudou (comparado com `seen.name` ou `name`), mantém papel e grupo anteriores (`source: "config"`); senão, classifica. A âncora sugerida é o grupo da âncora atual ou, sem mapa anterior, o grupo inferido do nome do bus do fone.
+
+Confirmação (`finalizeMap`): canais `ref` do grupo escolhido viram `anchor`; vozes nunca viram âncora. Cada canal guarda `seen: { name, icon }`. `ceilingDb` por canal é preservado se o grupo não mudou. Sem nenhum canal do grupo âncora, o mapa é recusado.
+
+Troca de patch (`diffMap`): só canais com `seen` são verificados, e só campos já lidos da mesa contam, para que um pacote ainda não recebido não gere alarme falso. Ao trocar de mesa, o patch lido é zerado e o bloqueio, removido.
 
 ## 10. Protocolo WebSocket
 
@@ -237,7 +275,8 @@ Uma mensagem `state` a cada 150 ms:
 | `mixer`, `realMixer` | Destino atual (com `name`, `model`, `fw` de `/info`) e mesa real configurada |
 | `scan` | `{ running, found[], at }` da descoberta de mesas |
 | `bus`, `busNames`, `busFaderDb`, `busDb` | Bus do fone, nomes dos 16 buses, fader e meter do bus |
-| `mode`, `ready`, `soloist`, `keyContrib`, `keyRefDb` | Estado do motor |
+| `mode`, `block`, `anchorName`, `ready`, `soloist`, `keyContrib`, `keyRefDb` | Estado do motor (`block`: motivo do bloqueio ou `null`; `anchorName`: grupo da âncora) |
+| `patchDiffs[]` | `{ ch, reasons, expected, actual }` para canais cujo nome/ícone na mesa não bate com o mapa confirmado |
 | `channels[]` | Por canal: `ch`, `name`, `role`, `group`, `ceilingDb`, `sendDb`, `baseDb`, `on`, `envDb`, `contribDb`, `targetContribDb`, `active`, `solo`, `target`, `approved`, `held`, `holdLeftSec`, `reason` |
 | `suggestions[]` | `{ ch, name, from, to, reason }`; inclui alerta de bus próximo de clipar |
 | `history[]` | Últimas 60 alterações, mais recentes primeiro |
@@ -251,8 +290,11 @@ Uma mensagem `state` a cada 150 ms:
 | `approveAll` | — | Aprova todas as sugestões |
 | `saveBase` | — | Grava os envios atuais como mix base |
 | `restoreBase` | — | Restaura a mix base e trava os canais alterados |
-| `setSend` | `ch`, `db` (−90 a +10) | Ajuste manual de um envio (exceto teclado) |
-| `keyboard` | `delta` (−6 a +6 dB) | Ajuste manual do teclado; L e R juntos |
+| `setSend` | `ch`, `db` (−90 a +10) | Ajuste manual de um envio (exceto âncora) |
+| `anchor` (ou `keyboard`) | `delta` (−6 a +6 dB) | Ajuste manual da âncora; L e R juntos |
+| `scanChannels` | — | Relê nome, ícone, cor e envio ligado dos 32 canais |
+| `proposeMap` | — | Responde só a quem pediu com `{ type: "proposal", rows[32], anchorGroup, busName, busGroup }` |
+| `applyMap` | `anchorGroup`, `rows[] { ch, role, group }` | Aplica o mapa confirmado; responde `{ type: "mapResult", ok, error }` |
 | `refresh` | — | Relê envios, nomes e nomes de bus |
 | `busNames` | — | Relê os nomes dos buses |
 | `connect` | `source: "sim"` ou `host`, `port` | Troca a mesa em execução |

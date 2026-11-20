@@ -115,6 +115,8 @@
   .card .cbot { align-items: flex-end; }
   .card .name { font-size: 13px; font-weight: 600; line-height: 1.15; overflow: hidden; display: -webkit-box;
     -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; transition: opacity .3s; }
+  /* Card da âncora: nome do grupo numa linha só ("GUITARRA" não quebra no meio) */
+  .card.keyboard .name { display: block; white-space: nowrap; text-overflow: ellipsis; word-break: normal; letter-spacing: -.2px; }
   .card .flag { color: var(--orange); flex: none; }
   .card .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--blue); flex: none; margin-top: 3px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }
   .card .unit { font-size: 12px; color: var(--label2); align-self: flex-end; }
@@ -206,6 +208,25 @@
   .src.engine { color: var(--indigo); } .src.manual { color: var(--orange); } .src.web { color: var(--blue); }
   .empty { padding: 14px 16px; font-size: 15px; color: var(--label2); }
 
+  /* Folha "Canais": revisão do mapa detectado */
+  .mapctl { display: flex; align-items: center; gap: 10px; margin: 6px 4px 12px; font-size: 15px; }
+  .mapctl label { color: var(--label2); white-space: nowrap; }
+  .mapctl select, .mrow select { flex: 1; min-width: 0; height: 40px; border: 0; border-radius: 10px; background: var(--fill2); color: var(--label);
+    font: inherit; font-size: 15px; padding: 0 10px; }
+  .mrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(0, 150px); align-items: center; gap: 10px; padding: 8px 12px 8px 16px; position: relative; }
+  .mrow + .mrow::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--sep); }
+  .mrow .n { font-size: 13px; font-weight: 700; color: var(--label2); }
+  .mrow b { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow span { display: block; font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow.anchor b { color: var(--yellow); }
+  .mrow.changed span { color: var(--orange); }
+  .mrow.off b { color: var(--label3); }
+  .maperr { margin: 0 4px 12px; font-size: 14px; color: var(--red); }
+  .maperr:empty { display: none; }
+  .pill.wide { width: 100%; height: 48px; border-radius: 12px; font-size: 17px; margin-bottom: 12px; }
+  .linkbtn { color: var(--blue); font-size: 14px; padding: 6px 4px; }
+  .seg button:disabled { opacity: .35; }
+
   @media (max-width: 380px) {
     .card .rel { font-size: 17px; }
     .card .name { font-size: 12px; }
@@ -255,10 +276,11 @@
       <div class="txt"><h2 id="stTitle">Conectando…</h2><p id="stSub"></p></div>
       <button class="pill" id="approveAll" hidden>Aplicar</button>
       <button class="pill" id="fixConn" hidden>Ajustar</button>
+      <button class="pill" id="reviewMap" hidden>Revisar</button>
     </div>
     <div class="metrics">
       <div class="metric"><div class="k">Solista</div><div class="v solo" id="soloName">—</div></div>
-      <div class="metric"><div class="k">Teclado</div><div class="v key" id="keyDb">—</div></div>
+      <div class="metric"><div class="k" id="keyLbl">Teclado</div><div class="v key" id="keyDb">—</div></div>
       <div class="metric"><div class="k">Fone</div><div class="v" id="busDb">—</div><div class="cap"><i id="busBar"></i></div></div>
     </div>
   </section>
@@ -312,6 +334,12 @@
     <div class="buses" id="buses"></div>
     <p class="note">Trocar de mesa ou de bus desliga o assistente e lê tudo de novo. A mesa real e o bus ficam salvos no config.json.</p>
 
+    <span class="lbl">Canais</span>
+    <div class="group">
+      <button class="cell" id="openMap"><svg width="22" height="22"><use href="#i-sliders"/></svg>Detectar canais da mesa</button>
+    </div>
+    <p class="note">Lê o nome e o ícone de cada canal na mesa e sugere quem é voz, quem é instrumento e de quem é o fone. Nada muda até você confirmar.</p>
+
     <span class="lbl">Mix base</span>
     <div class="group">
       <button class="cell" id="saveBase"><svg width="22" height="22"><use href="#i-save"/></svg>Salvar mix atual como base</button>
@@ -320,6 +348,20 @@
 
     <span class="lbl">Atividade</span>
     <div class="group" id="hist"></div>
+  </div>
+</div>
+
+<div class="scrim" id="mapScrim" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
+    <div class="grab"></div>
+    <div class="sheethead"><button id="mapCancel">Cancelar</button><h2 id="mapTitle">Canais</h2><button id="mapRescan">Ler de novo</button></div>
+    <div class="mapctl"><label for="anchorSel">Fone de</label><select id="anchorSel"></select></div>
+    <p class="note" id="mapNote"></p>
+    <div class="maperr" id="mapErr" role="alert"></div>
+    <div class="group" id="mapRows"></div>
+    <button class="linkbtn" id="mapAll" type="button"></button>
+    <button class="pill wide" id="mapApply" type="button">Usar este mapa</button>
+    <p class="note">Ao confirmar, o assistente é desligado, o mapa é salvo no config.json e, se depois o nome ou o ícone de um canal mudar na mesa, o assistente é bloqueado até você revisar de novo.</p>
   </div>
 </div>
 
@@ -361,6 +403,12 @@
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.type === 'state') { state = m; render(); }
+      else if (m.type === 'proposal') { mapProp = m; if (!mapAnchorTouched) mapAnchor = m.anchorGroup; renderMap(); }
+      else if (m.type === 'mapResult') {
+        if (m.ok) openMap(false);
+        else setText($('mapErr'), m.error || 'Não foi possível aplicar o mapa.');
+        $('mapApply').disabled = false;
+      }
     };
     ws.onclose = () => { renderOffline(); setTimeout(connect, 1500); };
     ws.onerror = () => ws.close();
@@ -378,7 +426,7 @@
   const nudge = (d) => {
     const c = state?.channels.find((x) => x.ch === selected);
     if (!c) return;
-    if (c.role === 'keyboard') return send({ type: 'keyboard', delta: d });
+    if (c.role === 'anchor') return send({ type: 'anchor', delta: d });
     if (c.sendDb != null) send({ type: 'setSend', ch: c.ch, db: Math.round((c.sendDb + d) * 2) / 2 });
   };
   $('dkDn').onclick = () => nudge(-1);
@@ -408,7 +456,7 @@
   $('fixConn').onclick = () => openSheet(true);
   $('busDone').onclick = () => openSheet(false);
   scrim.addEventListener('click', (e) => { if (e.target === scrim) openSheet(false); });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape') openSheet(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') { openSheet(false); openMap(false); } });
 
   const IP_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
   function connectReal(host, port) {
@@ -494,6 +542,75 @@
   }
   const busLabel = (s) => { const n = (s.busNames || [])[s.bus - 1]; return n ? `Bus ${s.bus} · ${n}` : `Bus ${s.bus}`; };
 
+  // ---------- Folha "Canais": sugestão automática + revisão ----------
+  const BASE_GROUPS = ['teclado', 'bateria', 'baixo', 'guitarra', 'violão', 'sopro', 'percussão', 'cordas', 'outros'];
+  const SRC_TXT = { name: 'pelo nome', icon: 'pelo ícone', config: 'como estava', ignore: 'ignorado (playback/efeito)' };
+  const mapScrim = $('mapScrim');
+  let mapProp = null, mapAnchor = 'teclado', mapAnchorTouched = false, mapShowAll = false;
+  const openMap = (open) => {
+    mapScrim.classList.toggle('open', open);
+    mapScrim.setAttribute('aria-hidden', !open);
+    if (open) {
+      mapProp = null; mapAnchorTouched = false; mapShowAll = false;
+      setText($('mapErr'), '');
+      setHTML($('mapRows'), '<div class="scanmsg"><span class="spin"></span>Lendo os canais da mesa…</div>');
+      send({ type: 'scanChannels' });
+      setTimeout(() => send({ type: 'proposeMap' }), 700); // dá tempo de a mesa responder
+    } else document.activeElement?.blur();
+  };
+  $('openMap').onclick = () => { openSheet(false); openMap(true); };
+  $('reviewMap').onclick = () => openMap(true);
+  $('mapCancel').onclick = () => openMap(false);
+  $('mapRescan').onclick = () => { send({ type: 'scanChannels' }); setTimeout(() => send({ type: 'proposeMap' }), 700); };
+  mapScrim.addEventListener('click', (e) => { if (e.target === mapScrim) openMap(false); });
+  $('anchorSel').onchange = (e) => { mapAnchor = e.target.value; mapAnchorTouched = true; renderMap(); };
+  $('mapAll').onclick = () => { mapShowAll = !mapShowAll; renderMap(); };
+  $('mapRows').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-ch]');
+    if (!sel || !mapProp) return;
+    const row = mapProp.rows.find((r) => r.ch === +sel.dataset.ch);
+    const v = sel.value;
+    if (!v) { row.role = null; row.group = ''; }
+    else if (v === 'vocal') { row.role = 'vocal'; row.group = 'voz'; }
+    else { row.role = 'ref'; row.group = v.slice(4); }
+    row.source = 'você';
+    renderMap();
+  });
+  $('mapApply').onclick = () => {
+    if (!mapProp) return;
+    if (!mapProp.rows.some((r) => r.role === 'ref' && r.group === mapAnchor)) {
+      setText($('mapErr'), `Nenhum canal está como ${mapAnchor}. Marque o instrumento de quem usa o fone.`);
+      return;
+    }
+    if (!confirm(`Usar este mapa? O fone passa a ser de ${mapAnchor} e o assistente será desligado.`)) return;
+    setText($('mapErr'), '');
+    $('mapApply').disabled = true;
+    send({ type: 'applyMap', anchorGroup: mapAnchor, rows: mapProp.rows.filter((r) => r.role).map(({ ch, role, group }) => ({ ch, role, group })) });
+  };
+
+  function renderMap() {
+    if (!mapProp) return;
+    const groups = [...new Set([...BASE_GROUPS, ...mapProp.rows.filter((r) => r.role === 'ref' && r.group).map((r) => r.group)])];
+    setHTML($('anchorSel'), groups.map((g) => `<option value="${esc(g)}"${g === mapAnchor ? ' selected' : ''}>${esc(g.charAt(0).toUpperCase() + g.slice(1))}</option>`).join(''));
+    const bn = mapProp.busName;
+    setText($('mapNote'), `O instrumento escolhido é a referência do fone e nunca é alterado pelo assistente.${bn ? ` Bus do fone: “${bn}”${mapProp.busGroup ? ` (sugere ${mapProp.busGroup})` : ''}.` : ''}`);
+    const diffCh = new Set((state?.patchDiffs || []).map((d) => d.ch));
+    const visible = mapProp.rows.filter((r) => mapShowAll || r.role || r.name);
+    const hidden = mapProp.rows.length - visible.length;
+    setHTML($('mapRows'), visible.map((r) => {
+      const val = !r.role ? '' : r.role === 'vocal' ? 'vocal' : `ref:${r.group}`;
+      const opts = [['', 'Fora do mapa'], ['vocal', 'Voz'], ...groups.map((g) => [`ref:${g}`, g.charAt(0).toUpperCase() + g.slice(1)])];
+      const isAnchor = r.role === 'ref' && r.group === mapAnchor;
+      const hint = [isAnchor ? 'âncora do fone' : SRC_TXT[r.source] || (r.source ? r.source : 'não reconhecido'),
+        r.sendOn === false ? 'envio desligado' : '', diffCh.has(r.ch) ? 'mudou na mesa' : ''].filter(Boolean).join(' · ');
+      return `<div class="mrow${isAnchor ? ' anchor' : ''}${!r.role ? ' off' : ''}${diffCh.has(r.ch) ? ' changed' : ''}">
+        <span class="n">${r.ch}</span><div><b>${esc(r.name || 'sem nome')}</b><span>${esc(hint)}</span></div>
+        <select data-ch="${r.ch}" aria-label="Papel do canal ${r.ch}">${opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>`;
+    }).join(''));
+    setText($('mapAll'), mapShowAll ? 'Ocultar canais sem nome' : hidden ? `Mostrar ${hidden} canais sem nome` : '');
+    $('mapAll').hidden = !mapShowAll && !hidden;
+  }
+
   // ---------- Cards ----------
   // Colunas pela largura da tela; as linhas dividem a altura disponível.
   const colsFor = () => (innerWidth >= 1000 ? 8 : innerWidth >= 700 ? 6 : 4);
@@ -501,7 +618,7 @@
     if (!state) return;
     const cols = colsFor();
     for (const [zone, grid, role] of [['zVoc', 'vocals', 'vocal'], ['zBand', 'band', 'ref']]) {
-      const n = state.channels.filter((c) => c.role === role).length + (role === 'ref' && state.channels.some((c) => c.role === 'keyboard') ? 1 : 0);
+      const n = state.channels.filter((c) => c.role === role).length + (role === 'ref' && state.channels.some((c) => c.role === 'anchor') ? 1 : 0);
       const rows = Math.max(1, Math.ceil(n / cols));
       $(zone).style.setProperty('--rows', rows);
       $(grid).style.setProperty('--rows', rows);
@@ -530,23 +647,24 @@
     const order = [];
     for (const c of channels) if (c.role === 'ref' && !order.includes(c.group)) order.push(c.group);
     const list = [...channels].sort((a, b) => (a.role === 'ref' && b.role === 'ref' ? order.indexOf(a.group) - order.indexOf(b.group) : 0));
-    const keys = channels.filter((c) => c.role === 'keyboard');
+    const keys = channels.filter((c) => c.role === 'anchor');
+    const anchorGroup = keys[0]?.group || 'teclado';
     if (keys.length) {
-      // Um card só para o teclado (L e R andam juntos)
+      // Um card só para a âncora (L e R andam juntos)
       const el = document.createElement('button');
       el.className = 'card keyboard';
-      el.style.setProperty('--c', groupColor('teclado'));
+      el.style.setProperty('--c', groupColor(anchorGroup));
       el.innerHTML = `<div class="lvl"><i class="fill" style="height:${pct(0)}%"></i><i class="kl" style="bottom:${pct(0)}%"></i></div>
-        <div class="ctop"><span class="name">KEYS</span><span class="flag"></span></div>
+        <div class="ctop"><span class="name">${esc(anchorGroup.toUpperCase())}</span><span class="flag"></span></div>
         <div class="cbot"><span class="rel"></span><span class="unit">dB</span></div>`;
       el.addEventListener('click', () => select(keys[0].ch));
       const q = (sel) => el.querySelector(sel);
       cardEls.set(keys[0].ch, { el, isKey: true, name: q('.name'), rel: q('.rel') });
       b.appendChild(el);
     }
-    $('legend').innerHTML = (keys.length ? ['teclado'] : []).concat(order.filter(Boolean)).map((g) => `<b style="--c:${groupColor(g)}">${g.charAt(0).toUpperCase() + g.slice(1)}</b>`).join('');
+    $('legend').innerHTML = (keys.length ? [anchorGroup] : []).concat(order.filter((g) => g && g !== anchorGroup)).map((g) => `<b style="--c:${groupColor(g)}">${g.charAt(0).toUpperCase() + g.slice(1)}</b>`).join('');
     for (const c of list) {
-      if (c.role === 'keyboard') continue;
+      if (c.role === 'anchor') continue;
       const el = document.createElement('button');
       el.className = `card ${c.role}`;
       el.style.setProperty('--c', groupColor(c.group || (c.role === 'vocal' ? 'voz' : '')));
@@ -584,6 +702,7 @@
     setStatus('red', 'warn', 'Sem conexão', 'O Mix Assist não está respondendo. Tentando de novo…');
     $('approveAll').hidden = true;
     $('fixConn').hidden = true;
+    $('reviewMap').hidden = true;
   }
 
   function render() {
@@ -593,6 +712,8 @@
     const relOf = (c) => (c.contribDb != null && s.keyContrib != null ? c.contribDb - s.keyContrib : null);
     const pending = s.suggestions.filter((g) => g.from != null);
     const busWarn = s.suggestions.find((g) => g.from == null);
+    const an = s.anchorName || 'teclado'; // de quem é o fone (grupo da âncora)
+    const diffs = s.patchDiffs || [];
     // Instrumento: acima do seu limite (teto do grupo). Voz: acima do teclado.
     const limitOf = (c) => (c.role === 'ref' && c.ceilingDb != null ? c.ceilingDb : 0);
     // Folga de 1 dB = mesma tolerância do motor (zona morta + arredondamento): só fica vermelho o que ele ainda vai corrigir.
@@ -608,15 +729,19 @@
       const on = b.dataset.mode === s.mode;
       b.classList.toggle('sel', on);
       b.setAttribute('aria-checked', on);
+      b.disabled = !!s.block && b.dataset.mode !== 'off';
     }
-    setText($('modeHint'), MODE_HINT[s.mode] || '');
+    setText($('modeHint'), s.block ? 'Bloqueado até revisar os canais.' : (MODE_HINT[s.mode] || '').replace('teclado', an));
+    setText($('keyLbl'), an.charAt(0).toUpperCase() + an.slice(1));
     if (scrim.classList.contains('open')) renderSheet();
 
     // Status
     const n = pending.length;
     if (s.switching) setStatus('yellow', 'wave', 'Conectando à mesa', s.simulated ? 'Simulador' : s.mixer.host);
     else if (!s.connected) setStatus('red', 'warn', 'Mesa sem resposta', s.connError || `Nada responde em ${s.simulated ? 'simulador' : s.mixer.host}.`);
-    else if (!s.ready) setStatus('yellow', 'wave', 'Calibrando', 'Toque o teclado por alguns segundos.');
+    else if (diffs.length) setStatus('red', 'warn', 'O patch da mesa mudou',
+      diffs.map((d) => `ch ${d.ch}: ${d.expected.name ?? '?'} → ${d.actual.name || 'sem nome'}`).join(' · '));
+    else if (!s.ready) setStatus('yellow', 'wave', 'Calibrando', `Toque o ${an} por alguns segundos.`);
     else if (overs.length) setStatus('red', 'warn',
       overs.length === 1 ? `${overs[0].name} acima do limite` : `${overs.length} canais acima do limite`,
       overs.length === 1 ? 'Abaixe esse canal no fone.' : overs.map((c) => c.name).join(', '));
@@ -624,9 +749,10 @@
     else if (s.mode === 'off') setStatus('gray', 'off', 'Assistente desligado', 'A mix está só sendo monitorada.');
     else if (n && s.mode === 'assist') setStatus('blue', 'sliders', `${n} ${pl(n, 'ajuste sugerido', 'ajustes sugeridos')}`, 'Toque em Aplicar para aceitar.');
     else if (n) setStatus('blue', 'sliders', 'Ajustando', `${n} ${pl(n, 'canal', 'canais')} em ajuste suave.`);
-    else setStatus('green', 'check', 'Tudo alinhado', 'Nada passa do teclado.');
+    else setStatus('green', 'check', 'Tudo alinhado', `Nada passa do ${an}.`);
     $('fixConn').hidden = s.connected || s.switching;
-    const showAll = s.connected && s.mode === 'assist' && n > 0;
+    $('reviewMap').hidden = !(s.connected && diffs.length);
+    const showAll = s.connected && !diffs.length && s.mode === 'assist' && n > 0;
     $('approveAll').hidden = !showAll;
     if (showAll) setText($('approveAll'), n > 1 ? `Aplicar ${n}` : 'Aplicar');
 
@@ -649,7 +775,7 @@
     const playing = band.filter((c) => c.active).length;
     setText($('bCount'), `${playing} de ${band.length} tocando`);
 
-    const keyChs = s.channels.filter((c) => c.role === 'keyboard');
+    const keyChs = s.channels.filter((c) => c.role === 'anchor');
     const keySend = keyChs.length && keyChs.every((k) => k.sendDb != null)
       ? keyChs.reduce((a, k) => a + k.sendDb, 0) / keyChs.length : null;
     for (const c of s.channels) {
@@ -661,7 +787,7 @@
         e.el.classList.toggle('silent', !on);
         e.el.classList.toggle('sel', c.ch === selected);
         setText(e.rel, keySend == null ? '—' : fmt(keySend, 1, true));
-        e.el.setAttribute('aria-label', `Teclado, envio ${keySend == null ? 'desconhecido' : fmt(keySend, 1, true) + ' dB'}`);
+        e.el.setAttribute('aria-label', `${an}, envio ${keySend == null ? 'desconhecido' : fmt(keySend, 1, true) + ' dB'}`);
         continue;
       }
       const rel = relOf(c);
@@ -684,14 +810,15 @@
         e.flag.dataset.f = flag;
         e.flag.innerHTML = flag === 'lock' ? icon('lock', 13) : flag === 'dot' ? '<span class="dot"></span>' : '';
       }
-      e.el.setAttribute('aria-label', `${c.name}${show ? `, ${fmt(rel, 0, true)} dB do teclado` : ', em silêncio'}`);
+      e.el.setAttribute('aria-label', `${c.name}${show ? `, ${fmt(rel, 0, true)} dB do ${an}` : ', em silêncio'}`);
     }
 
     // Barra de ajuste do canal selecionado
     let c = s.channels.find((x) => x.ch === selected);
-    if (c?.role === 'keyboard') {
-      c = { ch: c.ch, role: 'keyboard', name: keyChs.length > 1 ? 'Teclado (L + R juntos)' : 'Teclado', sendDb: keySend,
-        target: null, solo: false, held: false, reason: 'Referência: baixar o teclado baixa junto o limite dos instrumentos' };
+    if (c?.role === 'anchor') {
+      const label = an.charAt(0).toUpperCase() + an.slice(1);
+      c = { ch: c.ch, role: 'anchor', name: keyChs.length > 1 ? `${label} (L + R juntos)` : label, sendDb: keySend,
+        target: null, solo: false, held: false, reason: `Referência: baixar o ${an} baixa junto o limite dos instrumentos` };
     }
     $('dkEmpty').hidden = !!c;
     $('dkSel').hidden = !c;

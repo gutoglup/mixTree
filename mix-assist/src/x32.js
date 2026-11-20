@@ -3,6 +3,7 @@ import dgram from 'node:dgram';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { encode, decode, faderToDb, dbToFader, decodeMeterBlob, pad2 } from './osc.js';
+import { normalizeRole, CHANNEL_COUNT } from './automap.js';
 
 const RENEW_MS = 8000;
 const ALIVE_MS = 5000;
@@ -15,8 +16,7 @@ export class X32Client extends EventEmitter {
     this.port = port;
     this.bus = bus;
     this.busStr = pad2(bus);
-    this.channels = channels.map((c) => c.ch);
-    this.keyChannels = channels.filter((c) => c.role === 'keyboard').map((c) => c.ch);
+    this.setChannels(channels, { refresh: false });
     this.lastRx = 0;
     this.info = null; // { name, model, fw } vindo de /info
     this.socket = null;
@@ -36,6 +36,7 @@ export class X32Client extends EventEmitter {
       this._subscribe();
       this.refreshAll();
       this.refreshBusNames();
+      this.scanChannels();
       this.timer = setInterval(() => this._subscribe(), RENEW_MS);
     });
   }
@@ -68,6 +69,27 @@ export class X32Client extends EventEmitter {
     this._subscribe();
     this.refreshAll();
     this.refreshBusNames();
+    this.scanChannels();
+  }
+
+  // Troca o mapa de canais (após confirmação na página). A âncora ("anchor" ou
+  // "keyboard") só pode ser escrita por setKeyboardSend.
+  setChannels(channels, { refresh = true } = {}) {
+    this.channels = channels.map((c) => c.ch);
+    this.keyChannels = channels.filter((c) => normalizeRole(c.role) === 'anchor').map((c) => c.ch);
+    if (refresh) this.refreshAll();
+  }
+
+  // Lê o "patch" da mesa inteira (1–32): nome, ícone, cor e se o canal manda
+  // para o bus do fone. Base da detecção automática do mapa e da checagem de troca de patch.
+  scanChannels() {
+    for (let ch = 1; ch <= CHANNEL_COUNT; ch++) {
+      const n = pad2(ch);
+      this.send(`/ch/${n}/config/name`);
+      this.send(`/ch/${n}/config/icon`);
+      this.send(`/ch/${n}/config/color`);
+      this.send(`/ch/${n}/mix/${this.busStr}/on`);
+    }
   }
 
   // Muda o bus do fone sem reiniciar. Respostas atrasadas do bus antigo são
@@ -76,6 +98,7 @@ export class X32Client extends EventEmitter {
     this.bus = bus;
     this.busStr = pad2(bus);
     this.refreshAll();
+    this.scanChannels();
   }
 
   refreshBusNames() {
@@ -121,6 +144,8 @@ export class X32Client extends EventEmitter {
       this.info = { name: String(args[1] ?? ''), model: String(args[2] ?? ''), fw: String(args[3] ?? '') };
     } else if ((m = address.match(/^\/ch\/(\d\d)\/config\/name$/))) {
       this.emit('name', { ch: +m[1], name: String(args[0] ?? '') });
+    } else if ((m = address.match(/^\/ch\/(\d\d)\/config\/(icon|color)$/))) {
+      if (typeof args[0] === 'number') this.emit(m[2], { ch: +m[1], [m[2]]: Math.round(args[0]) });
     } else if ((m = address.match(/^\/bus\/(\d\d)\/config\/name$/))) {
       this.emit('busName', { bus: +m[1], name: String(args[0] ?? '') });
     } else if ((m = address.match(/^\/ch\/(\d\d)\/mix\/(\d\d)\/level$/))) {
