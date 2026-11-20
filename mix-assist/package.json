@@ -1,0 +1,16 @@
+{
+  "name": "mix-assist",
+  "version": "1.0.0",
+  "description": "Assistente inteligente de mix de fone para Behringer X32 (Bus 5)",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "sim": "node src/server.js --sim",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
