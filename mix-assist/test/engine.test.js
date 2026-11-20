@@ -335,3 +335,57 @@ test('teclado: só muda por ajuste manual explícito, L e R juntos', () => {
   r = run(e, 40, { 15: -20, 16: -20, 17: -25 }, r.now);
   assert.ok(send(e, 17) < 0, 'guitarra acompanhou o teclado para baixo');
 });
+
+// ---------- Âncora genérica (fone de qualquer músico) ----------
+
+test('âncora: role "anchor" de guitarra é a referência e nunca é alterada', () => {
+  const map = [
+    { ch: 17, role: 'anchor', group: 'guitarra', name: 'GTR' },
+    { ch: 9, role: 'ref', group: 'teclado', name: 'KEYS' },
+    { ch: 1, role: 'vocal', name: 'Voz 1' },
+  ];
+  const e = new MixEngine(map);
+  for (const c of map) e.onMixerSend(c.ch, 0, 0);
+  e.setMode('auto');
+  run(e, 40, { 17: -20, 9: -5 }); // teclado bem acima da guitarra
+  assert.equal(e.anchorName, 'guitarra');
+  assert.equal(send(e, 17), 0, 'a âncora não muda');
+  assert.ok(contrib(e, 9) <= e.keyContrib + 0.5, 'o teclado (agora instrumento) foi baixado até a guitarra');
+  assert.equal(e.onUserSend(17, -3, 50_000), null, 'nem pela página como canal comum');
+  const fresh = new MixEngine(map);
+  for (const c of map) fresh.onMixerSend(c.ch, c.role === "vocal" ? -10 : 0, 0);
+  fresh.tick(0);
+  assert.equal(fresh.channels.get(1).reason, 'aguardando o guitarra tocar', 'textos falam da âncora, não do teclado');
+  assert.equal(e.snapshot().channels[0].role, 'anchor');
+  assert.equal(e.snapshot().anchorName, 'guitarra');
+});
+
+test('âncora: "keyboard" (config antigo) continua funcionando como âncora "teclado"', () => {
+  const e = makeEngine();
+  assert.equal(e.anchorName, 'teclado');
+  assert.equal(e.channels.get(9).role, 'anchor');
+  assert.deepEqual(e.keyChs, [9]);
+});
+
+test('âncora: mapa sem âncora é recusado', () => {
+  assert.throws(() => new MixEngine([{ ch: 1, role: 'vocal' }]), /âncora/);
+});
+
+// ---------- Bloqueio (patch da mesa mudou) ----------
+
+test('bloqueio: desliga o assistente e impede religar até ser liberado', () => {
+  const e = makeEngine({ 23: 0 });
+  e.setMode('auto');
+  e.setBlock('o patch da mesa mudou');
+  assert.equal(e.mode, 'off');
+  assert.throws(() => e.setMode('auto'), /bloqueado/);
+  assert.throws(() => e.setMode('assist'), /bloqueado/);
+  e.setMode('off'); // desligar sempre pode
+  const r = run(e, 20, { 9: -20, 23: -2 });
+  assert.equal(r.actions.length, 0, 'nada é escrito na mesa enquanto bloqueado');
+  assert.equal(e.snapshot().block, 'o patch da mesa mudou');
+  e.setBlock(null);
+  assert.equal(e.snapshot().block, null);
+  e.setMode('auto');
+  assert.equal(e.mode, 'auto');
+});

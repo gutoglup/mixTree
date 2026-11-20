@@ -8,6 +8,8 @@ import { WebSocketServer } from 'ws';
 import { X32Client, BUS_COUNT, scanMixers } from './x32.js';
 import { MixEngine } from './engine.js';
 import { startSimulator } from './simulator.js';
+import { CHANNEL_COUNT, DEFAULT_RULES, DEFAULT_ICONS, buildProposal, finalizeMap, diffMap, suggestAnchorGroup } from './automap.js';
+import { formatChannels, replaceTopLevel } from './configfile.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -29,14 +31,47 @@ async function ensureSim() {
 const target = () => (simulated ? { host: '127.0.0.1', port: sim.port } : config.mixer);
 if (simulated) await ensureSim();
 
-const engine = new MixEngine(config.channels, config.engine);
+let engine = new MixEngine(config.channels, config.engine);
 const x32 = new X32Client({ ...target(), bus: config.bus, channels: config.channels });
 let busFaderDb = null;
 const busNames = new Array(BUS_COUNT).fill('');
 
-x32.on('name', ({ ch, name }) => engine.setName(ch, name));
+// ---------- Patch da mesa (nome/ícone/cor de 1–32) e checagem de troca de patch ----------
+// Regras de detecção: as do config.json (autoMap.rules) substituem as padrão;
+// autoMap.icons completa/sobrescreve a tabela de ícones padrão.
+const autoMapOpts = {
+  rules: config.autoMap?.rules ?? DEFAULT_RULES,
+  icons: { ...DEFAULT_ICONS, ...(config.autoMap?.icons ?? {}) },
+};
+const emptyPatch = () => Array.from({ length: CHANNEL_COUNT }, (_, i) => ({ ch: i + 1 }));
+let patch = emptyPatch();
+let patchDiffs = [];
+function checkPatch() {
+  const diffs = diffMap(config.channels, patch);
+  const was = patchDiffs.length;
+  patchDiffs = diffs;
+  if (diffs.length && !was) {
+    console.log(`Patch da mesa mudou (${diffs.map((d) => `ch ${d.ch}: "${d.expected.name ?? ''}" → "${d.actual.name ?? ''}"`).join(', ')}) · assistente desligado até revisar os canais`);
+  }
+  engine.setBlock(diffs.length ? 'o patch da mesa mudou — revise os canais' : null);
+}
+const onPatch = (ch, field, value) => {
+  if (ch < 1 || ch > CHANNEL_COUNT) return;
+  patch[ch - 1][field] = value;
+  checkPatch();
+};
+
+x32.on('name', ({ ch, name }) => {
+  engine.setName(ch, name);
+  onPatch(ch, 'name', name);
+});
+x32.on('icon', ({ ch, icon }) => onPatch(ch, 'icon', icon));
+x32.on('color', ({ ch, color }) => onPatch(ch, 'color', color));
 x32.on('send', ({ ch, db }) => engine.onMixerSend(ch, db, Date.now()));
-x32.on('sendOn', ({ ch, on }) => engine.setSendOn(ch, on));
+x32.on('sendOn', ({ ch, on }) => {
+  engine.setSendOn(ch, on);
+  if (ch >= 1 && ch <= CHANNEL_COUNT) patch[ch - 1].sendOn = on;
+});
 x32.on('channelMeters', (arr) => engine.setChannelMeters(arr, Date.now()));
 x32.on('busMeter', (v) => engine.setBusMeter(v));
 x32.on('busFader', (db) => (busFaderDb = db));
@@ -76,6 +111,9 @@ setInterval(() => {
   if ([...engine.channels.values()].some((c) => c.sendDb == null)) x32.refreshAll();
 }, 3000);
 
+// A X32 avisa por /xremote quando um nome muda; a releitura periódica cobre pacotes perdidos.
+setInterval(() => x32.scanChannels(), 20000);
+
 // ---------- config.json: grava só o trecho alterado, preservando a formatação ----------
 async function saveConfig(edit) {
   try {
@@ -105,6 +143,9 @@ async function connectTo({ useSim, host, port }) {
     lastErr = '';
     busFaderDb = null;
     busNames.fill('');
+    patch = emptyPatch();
+    patchDiffs = [];
+    engine.setBlock(null);
     engine.resetMixer();
     x32.setTarget(t.host, t.port);
     console.log(`Mesa: ${useSim ? 'SIMULADOR' : `${host}:${port}`} · Bus ${config.bus} · assistente desligado`);
@@ -141,6 +182,43 @@ async function setBus(bus) {
   console.log(`Bus do fone: ${from} → ${bus}${busNames[bus - 1] ? ` (${busNames[bus - 1]})` : ''} · assistente desligado`);
   // O bus escolhido no simulador não vale para a mesa real: só grava com a mesa real.
   if (!simulated) await saveConfig((text) => text.replace(/("bus"\s*:\s*)\d+/, `$1${bus}`));
+}
+
+// ---------- Mapa de canais: sugestão e confirmação ----------
+function proposal() {
+  const busName = busNames[config.bus - 1];
+  return {
+    type: 'proposal',
+    ...buildProposal(patch, { previous: config.channels, ...autoMapOpts, busName }),
+    busName,
+    busGroup: suggestAnchorGroup(busName, autoMapOpts), // "FONE GUITARRA" → guitarra
+  };
+}
+
+async function applyMap(rows, anchorGroup) {
+  if (!Array.isArray(rows) || typeof anchorGroup !== 'string' || !anchorGroup.trim()) {
+    return { ok: false, error: 'pedido inválido' };
+  }
+  const { channels, errors } = finalizeMap(rows, anchorGroup.trim(), { patch, previous: config.channels });
+  if (errors.length) return { ok: false, error: errors.join('; ') };
+  let next;
+  try {
+    next = new MixEngine(channels, config.engine);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  next.history = engine.history; // atividade continua visível
+  next.lastMeterAt = engine.lastMeterAt;
+  for (const p of patch) if (p.name) next.setName(p.ch, p.name);
+  engine = next; // nasce em "Desligado"
+  config.channels = channels;
+  x32.setChannels(channels);
+  patchDiffs = [];
+  checkPatch();
+  console.log(`Mapa de canais atualizado: ${channels.length} canais · fone de ${engine.anchorName} · assistente desligado${simulated ? ' (simulador: não salvo)' : ''}`);
+  // Como o bus, o mapa testado no simulador não vale para a mesa real: só grava com a mesa real.
+  if (!simulated) await saveConfig((text) => replaceTopLevel(text, 'channels', formatChannels(channels)));
+  return { ok: true };
 }
 
 // ---------- HTTP estático ----------
@@ -209,6 +287,7 @@ wss.on('connection', (ws) => {
         if (action) apply([action]);
         break;
       }
+      case 'anchor':
       case 'keyboard': {
         const d = Math.min(6, Math.max(-6, Number(msg.delta)));
         for (const a of engine.adjustKeyboard(d, now)) x32.setKeyboardSend(a.ch, a.db);
@@ -235,6 +314,15 @@ wss.on('connection', (ws) => {
       case 'scan':
         runScan();
         break;
+      case 'scanChannels':
+        x32.scanChannels();
+        break;
+      case 'proposeMap':
+        ws.send(JSON.stringify(proposal()));
+        break;
+      case 'applyMap':
+        applyMap(msg.rows, msg.anchorGroup).then((r) => ws.send(JSON.stringify({ type: 'mapResult', ...r })));
+        break;
       case 'setBus': {
         const bus = Number(msg.bus);
         if (!Number.isInteger(bus) || bus < 1 || bus > BUS_COUNT || bus === config.bus) break;
@@ -258,6 +346,7 @@ function stateMessage() {
     bus: config.bus,
     busNames,
     busFaderDb,
+    patchDiffs,
     ...engine.snapshot(Date.now()),
     suggestions: lastSuggestions,
   });
