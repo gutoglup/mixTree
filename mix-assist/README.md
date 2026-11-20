@@ -26,8 +26,8 @@ O Mixing Station continua rodando em paralelo. O modo "Personal Monitoring" dele
 
 ## Regras de segurança
 
-- O app **só escreve** em `/ch/NN/mix/02/level`, que são os envios dos canais para o Bus 2. Ele não toca no PA, nos faders de canal, em outros buses nem no teclado.
-- O canal de teclado **nunca** é alterado, nem pelo motor nem pela página.
+- O app **só escreve** em `/ch/NN/mix/02/level`, que são os envios dos canais para o Bus 2. Ele não toca no PA, nos faders de canal nem em outros buses.
+- O motor **nunca** altera o teclado. O teclado só muda quando você usa o card **KEYS** na página (L e R juntos).
 - Se alguém mexer num envio (na mesa, no Mixing Station ou na página), o motor **trava aquele canal** por `manualHoldSec` segundos e adota o novo valor como base.
 
 ## Como rodar
@@ -36,7 +36,7 @@ Precisa do Node 20 ou mais novo.
 
 ```bash
 npm install
-npm test          # 11 testes do motor e do OSC
+npm test          # 22 testes do motor e do OSC
 npm run sim       # X32 falsa em 127.0.0.1, para testar em casa
 npm start         # mesa real (IP e Bus do config.json)
 ```
@@ -59,7 +59,6 @@ Botões extras:
 
 - `mixer.host` e `mixer.port`: IP da X32 e porta 10023.
 - `bus`: bus do fone (2).
-- `mixer.host` / `mixer.port`: IP e porta da mesa.
 
 Mesa, simulador e bus também podem ser trocados pela página, sem reiniciar: toque no indicador "Bus N" no topo. Lá dá para digitar o IP, **procurar mesas na rede** (o app pergunta em broadcast quem é X32/M32), alternar para o **simulador** e escolher o bus. Cada troca desliga o assistente e lê tudo de novo; o IP e o bus da mesa real ficam salvos aqui (o simulador não grava nada).
 
