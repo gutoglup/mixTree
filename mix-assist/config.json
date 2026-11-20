@@ -1,0 +1,33 @@
+{
+  "mixer": { "host": "192.168.1.104", "port": 10023 },
+  "bus": 2,
+  "web": { "port": 3000 },
+  "channels": [
+    { "ch": 15, "role": "keyboard", "name": "KEYS L" },
+    { "ch": 16, "role": "keyboard", "name": "KEYS R" },
+
+    { "ch": 20, "role": "vocal", "name": "VOZ MIC PR" },
+    { "ch": 22, "role": "vocal", "name": "VOZ KADOSH01" },
+    { "ch": 23, "role": "vocal", "name": "VOZ KADOSH01" },
+    { "ch": 24, "role": "vocal", "name": "VOZ SHURE 01" },
+    { "ch": 25, "role": "vocal", "name": "VOZ SHURE 02" },
+    { "ch": 26, "role": "vocal", "name": "VOZ MIC VERM" },
+    { "ch": 27, "role": "vocal", "name": "VOZ MIC AZUL" },
+    { "ch": 28, "role": "vocal", "name": "VOZ MIC" },
+
+    { "ch": 1,  "role": "ref", "name": "BB", "group": "bateria", "ceilingDb": -4 },
+    { "ch": 2,  "role": "ref", "name": "CAIXA UP", "group": "bateria", "ceilingDb": -5 },
+    { "ch": 3,  "role": "ref", "name": "HIHAT", "group": "bateria" },
+    { "ch": 4,  "role": "ref", "name": "TOM 01", "group": "bateria" },
+    { "ch": 5,  "role": "ref", "name": "TOM 02", "group": "bateria" },
+    { "ch": 7,  "role": "ref", "name": "SD 01", "group": "bateria" },
+    { "ch": 8,  "role": "ref", "name": "SD 02", "group": "bateria" },
+    { "ch": 13, "role": "ref", "name": "VIOLAO", "group": "violão" },
+    { "ch": 14, "role": "ref", "name": "BAIXO", "group": "baixo" },
+    { "ch": 17, "role": "ref", "name": "GTR L", "group": "guitarra" },
+    { "ch": 18, "role": "ref", "name": "GTR R", "group": "guitarra" },
+    { "ch": 19, "role": "ref", "name": "SAX", "group": "sopro" }
+  ],
+  "engine": { "vocalBackingDb": -10, "vocalSoloMaxDb": -8, "soloVsKeyDb": 0, "ceilingDb": -1, "maxRateDbPerSec": 0.6, "dwellSec": 2.5, "settleSec": 6, "maxMoveDb": 3, "cutMaxMoveDb": 6, "cutRateDbPerSec": 2, "cutSettleSec": 2, "manualHoldSec": 20,
+    "groupCeilingDb": { "bateria": -10, "baixo": -3, "violão": -8, "guitarra": -8, "sopro": -8 } }
+}
