@@ -1,7 +1,7 @@
 {
   "name": "mix-assist",
   "version": "1.0.0",
-  "description": "Assistente inteligente de mix de fone para Behringer X32 (Bus 5)",
+  "description": "Assistente de mix de fone para Behringer X32/M32 via OSC",
   "type": "module",
   "main": "src/server.js",
   "engines": { "node": ">=20" },
