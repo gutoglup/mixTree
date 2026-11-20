@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mix Assist">
+<title>Mix Assist</title>
+<style>
+  /* Paleta do sistema (modo escuro — pensado para palco com pouca luz) */
+  :root {
+    --bg: #000; --group: #1c1c1e; --fill: #2c2c2e; --fill2: #3a3a3c;
+    --sep: rgba(84, 84, 88, .55);
+    --label: #fff; --label2: rgba(235, 235, 245, .6); --label3: rgba(235, 235, 245, .3);
+    --blue: #0a84ff; --pink: #ff375f; --yellow: #ffd60a; --green: #30d158;
+    --orange: #ff9f0a; --red: #ff453a; --gray: #8e8e93; --indigo: #5e5ce6;
+    --purple: #bf5af2; --teal: #40c8e0; --brown: #ac8e68; --mint: #63e6e2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label);
+    font: 17px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+    font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+  button:disabled { opacity: .35; cursor: default; }
+  svg { display: block; flex: none; }
+  [hidden] { display: none !important; }
+
+  /* A tela inteira é um painel: sem rolagem, os cards dividem o espaço */
+  .app { min-height: 100vh; min-height: 100dvh; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column;
+    padding: calc(env(safe-area-inset-top) + 8px) 12px 0; gap: 10px; }
+
+  /* Topo */
+  .navtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .navtop h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.4px; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label2); min-width: 0;
+    background: var(--group); border-radius: 999px; height: 32px; padding: 0 10px 0 9px; white-space: nowrap; }
+  .conn:active { opacity: .6; }
+  .conn #mixer { overflow: hidden; text-overflow: ellipsis; }
+  .conn .chev { color: var(--label3); transform: rotate(90deg); }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }
+  .conn.on i { background: var(--green); }
+  .sim { font-size: 11px; font-weight: 700; color: var(--orange); letter-spacing: .3px; }
+
+  .modes { display: flex; align-items: center; gap: 14px; }
+  .seg { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--fill);
+    border-radius: 9px; padding: 2px; flex: 1; }
+  .seg .thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / 3);
+    background: #636366; border-radius: 7px; box-shadow: 0 3px 8px rgba(0,0,0,.25);
+    transition: transform .25s cubic-bezier(.3,.7,.2,1); }
+  .seg button { position: relative; z-index: 1; height: 32px; font-size: 14px; font-weight: 500; color: var(--label2); transition: color .2s; }
+  .seg button.sel { color: var(--label); font-weight: 600; }
+  .modehint { font-size: 13px; color: var(--label2); display: none; }
+  @media (min-width: 760px) { .seg { flex: none; width: 380px; } .modehint { display: block; } }
+
+  /* Status: a resposta para "está tudo bem?" */
+  .hero { background: var(--group); border-radius: 16px; padding: 12px 14px; display: grid; gap: 10px; }
+  .status { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .status .ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none;
+    background: color-mix(in srgb, var(--tone) 18%, transparent); color: var(--tone); transition: background .3s, color .3s; }
+  .status .txt { flex: 1; min-width: 0; }
+  .status h2 { margin: 0; font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status p { margin: 1px 0 0; font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pill { height: 34px; padding: 0 14px; border-radius: 999px; font-size: 15px; font-weight: 600;
+    background: var(--blue); color: #fff; white-space: nowrap; flex: none; }
+  .pill:active { opacity: .7; }
+  .metrics { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
+    padding-top: 10px; border-top: .5px solid var(--sep); }
+  .metric { min-width: 0; }
+  .metric .k { font-size: 11px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .4px; }
+  .metric .v { font-size: 17px; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metric .v small { font-size: 12px; font-weight: 500; color: var(--label2); margin-left: 2px; }
+  .metric .v.solo { color: var(--label); }
+  .metric .v.key { color: var(--yellow); }
+  .metric .v.dim { color: var(--label3); }
+  .cap { height: 3px; border-radius: 2px; background: var(--fill); margin-top: 4px; overflow: hidden; }
+  .cap i { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--green); transition: width .15s, background .3s; }
+
+  /* Painel de cards */
+  .board { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+  .zone { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: var(--rows, 1) 1 0; }
+  .zhead { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px;
+    font-size: 13px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .4px; }
+  .zhead span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 0 4px; margin-top: -2px; font-size: 12px; overflow: hidden; max-height: 1.35em; }
+  .legend:empty { display: none; }
+  .legend b { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--label2); white-space: nowrap; }
+  .legend b::before { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+  .cards { flex: 1; display: grid; gap: 8px; padding: 3px;  margin: -3px; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 1), minmax(72px, 1fr)); }
+
+  .card { position: relative; overflow: hidden; border-radius: 14px; background: var(--group); text-align: left;
+    padding: 9px 10px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0;
+    transition: transform .12s, box-shadow .2s; --c: var(--gray); }
+  .card:active { transform: scale(.97); }
+  /* Cor do grupo (--c vem do JS): faixa à esquerda + fundo levemente tingido */
+  .card { background: color-mix(in srgb, var(--c) 9%, var(--group)); }
+  .card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+  /* Anel por cima do preenchimento: branco = solista, vermelho = acima do limite */
+  .card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+  .card.solo::after { box-shadow: inset 0 0 0 2px var(--label); }
+  .card.over::after { box-shadow: inset 0 0 0 2.5px var(--red); }
+  .card.sel { outline: 2.5px solid var(--label); outline-offset: 2px; }
+  .card .stag { font-size: 10px; font-weight: 800; letter-spacing: .4px; padding: 2px 5px; border-radius: 5px; background: var(--label); color: #000; flex: none; }
+  .card .lvl { position: absolute; inset: 0; pointer-events: none; }
+  .card .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0;
+    background: color-mix(in srgb, var(--c) 32%, transparent); transition: height .2s ease-out, background .3s; }
+  .card .kl { position: absolute; left: 0; right: 0; height: 2px; margin-bottom: -1px; background: var(--yellow); opacity: .75; }
+  .card .cl { position: absolute; left: 0; right: 0; height: 0; margin-bottom: -1px; border-top: 1.5px dotted var(--red); opacity: .7; }
+  .card .tg { position: absolute; left: 0; right: 0; height: 0; margin-bottom: -1px; border-top: 2px dashed var(--blue); transition: bottom .3s; }
+  .card .ctop, .card .cbot { position: relative; display: flex; justify-content: space-between; gap: 4px; min-width: 0; }
+  .card .cbot { align-items: flex-end; }
+  .card .name { font-size: 13px; font-weight: 600; line-height: 1.15; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; transition: opacity .3s; }
+  .card .flag { color: var(--orange); flex: none; }
+  .card .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--blue); flex: none; margin-top: 3px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }
+  .card .unit { font-size: 12px; color: var(--label2); align-self: flex-end; }
+  .card .rel { font-size: 20px; font-weight: 600; letter-spacing: -.3px; line-height: 1; }
+  .card.over .rel { color: var(--red); }
+  .card.silent .name, .card.silent .rel { opacity: .4; }
+
+  /* Barra de ajuste do canal selecionado */
+  .dock { position: sticky; bottom: 0; margin: 0 -12px; padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+    background: rgba(0, 0, 0, .82); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: .5px solid var(--sep); }
+  .dk { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+  .dk-empty { flex: 1; text-align: center; font-size: 15px; color: var(--label2); }
+  .dk-info { flex: 1; min-width: 0; }
+  .dk-info b { display: block; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label2); margin-top: 2px; min-height: 26px; min-width: 0; }
+  .sub .tag { font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--label); }
+  .sub .lock { display: inline-flex; align-items: center; gap: 3px; color: var(--orange); white-space: nowrap; }
+  .sub .why { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .apply { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    color: var(--blue); background: color-mix(in srgb, var(--blue) 18%, transparent); white-space: nowrap; }
+  .apply:active { opacity: .6; }
+  .val { text-align: right; min-width: 58px; }
+  .val b { display: block; font-size: 20px; font-weight: 600; }
+  .val small { display: block; font-size: 12px; color: var(--label2); }
+  .val small.to { color: var(--blue); font-weight: 600; }
+  .step { display: flex; background: var(--fill); border-radius: 10px; height: 44px; flex: none; }
+  .step button { width: 48px; display: grid; place-items: center; }
+  .step button:active:not(:disabled) { background: var(--fill2); }
+  .step button:first-child { border-radius: 10px 0 0 10px; }
+  .step button:last-child { border-radius: 0 10px 10px 0; }
+  .step i { width: .5px; background: var(--sep); margin: 10px 0; }
+
+  /* Folha "Mesa" */
+  .scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .sheet { max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; width: 100%; max-width: 520px; background: var(--group);
+    border-radius: 14px 14px 0 0; padding: 8px 16px calc(env(safe-area-inset-bottom) + 20px);
+    transform: translateY(100%); transition: transform .3s cubic-bezier(.3,.7,.2,1); }
+  .scrim.open .sheet { transform: none; }
+  @media (min-width: 700px) { .scrim { align-items: center; } .sheet { border-radius: 14px; } }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: var(--fill2); margin: 0 auto 10px; }
+  .sheethead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .sheethead h2 { margin: 0; font-size: 20px; font-weight: 700; }
+  .sheethead button { color: var(--blue); font-size: 17px; font-weight: 600; min-height: 44px; padding: 0 4px; }
+  .seg.two { grid-template-columns: repeat(2, 1fr); margin: 6px 0 12px; }
+  .seg.two .thumb { width: calc((100% - 4px) / 2); }
+  .connst { display: flex; align-items: flex-start; gap: 10px; background: var(--fill); border-radius: 12px; padding: 12px; margin-bottom: 18px; }
+  .connst i { width: 10px; height: 10px; border-radius: 50%; background: var(--red); margin-top: 5px; flex: none; }
+  .connst.on i { background: var(--green); }
+  .connst.wait i { background: var(--yellow); }
+  .connst b { display: block; font-size: 15px; font-weight: 600; }
+  .connst span { display: block; font-size: 13px; color: var(--label2); margin-top: 2px; }
+  .lbl { display: block; font-size: 13px; font-weight: 500; color: var(--label2); text-transform: uppercase; letter-spacing: .4px; margin: 0 4px 6px; }
+  .ipform { display: flex; gap: 8px; margin-bottom: 8px; }
+  .ipform input { min-width: 0; height: 44px; border: 0; border-radius: 10px; background: var(--fill); color: var(--label);
+    font: inherit; font-size: 17px; padding: 0 12px; font-variant-numeric: tabular-nums; }
+  .ipform input:focus { outline: 2px solid var(--blue); outline-offset: 0; }
+  .ipform #ipIn { flex: 1; }
+  .ipform #portIn { width: 84px; }
+  .ipform .pill { height: 44px; border-radius: 10px; }
+  .group { background: var(--fill); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+  .cell { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; text-align: left; font-size: 17px; color: var(--blue); position: relative; }
+  .cell:active { background: var(--fill2); }
+  .cell + .cell::before, .found + .found::before, .h + .h::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--sep); }
+  .found { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; text-align: left; position: relative; }
+  .found:active { background: var(--fill2); }
+  .found b { display: block; font-size: 16px; font-weight: 600; }
+  .found span { display: block; font-size: 13px; color: var(--label2); }
+  .found .go { margin-left: auto; color: var(--blue); font-size: 15px; font-weight: 600; }
+  .found.cur .go { color: var(--green); }
+  .scanmsg { padding: 12px 16px; font-size: 13px; color: var(--label2); display: flex; gap: 10px; align-items: center; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--fill2); border-top-color: var(--blue); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .buses { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .bus { min-height: 60px; border-radius: 12px; background: var(--fill); padding: 8px 6px; display: grid; place-content: center; gap: 2px; text-align: center; }
+  .bus:active { background: var(--fill2); }
+  .bus b { font-size: 20px; font-weight: 600; }
+  .bus span { font-size: 11px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .bus.sel { background: var(--blue); }
+  .bus.sel span { color: rgba(255,255,255,.85); }
+  .note { margin: 0 4px 20px; font-size: 13px; color: var(--label2); line-height: 1.35; }
+  .h { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 16px; position: relative; }
+  .h b { font-size: 15px; font-weight: 600; }
+  .h .d { font-size: 15px; text-align: right; }
+  .h .m { font-size: 13px; color: var(--label2); }
+  .h .src { font-size: 13px; text-align: right; }
+  .src.engine { color: var(--indigo); } .src.manual { color: var(--orange); } .src.web { color: var(--blue); }
+  .empty { padding: 14px 16px; font-size: 15px; color: var(--label2); }
+
+  @media (max-width: 380px) {
+    .card .rel { font-size: 17px; }
+    .card .name { font-size: 12px; }
+    .step button { width: 44px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- Ícones (traço no estilo SF Symbols) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.4v.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-off" viewBox="0 0 24 24"><path d="M12 3v8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M7.5 6.5a7.5 7.5 0 1 0 9 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M5 7h14M5 17h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="9" cy="7" r="2.6" fill="var(--group)" stroke="currentColor" stroke-width="2.2"/><circle cx="15" cy="17" r="2.6" fill="var(--group)" stroke="currentColor" stroke-width="2.2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12h12M12 6v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 6L4.5 10.5 9 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10.5h9a5 5 0 0 1 0 10h-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="app">
+  <header>
+    <div class="navtop">
+      <h1>Mix Assist</h1>
+      <button class="conn" id="conn" aria-label="Mesa e bus do fone"><i></i><span id="mixer">Conectando…</span><span class="sim" id="simBadge" hidden>SIM</span><svg class="chev" width="12" height="12"><use href="#i-chev"/></svg></button>
+    </div>
+  </header>
+
+  <div class="modes">
+    <div class="seg" id="modes" role="radiogroup" aria-label="Modo">
+      <span class="thumb" id="thumb"></span>
+      <button data-mode="off" role="radio">Desligado</button>
+      <button data-mode="assist" role="radio">Assistido</button>
+      <button data-mode="auto" role="radio">Automático</button>
+    </div>
+    <div class="modehint" id="modeHint"></div>
+  </div>
+
+  <section class="hero" aria-live="polite">
+    <div class="status">
+      <div class="ic" id="stIcon"><svg width="22" height="22"><use href="#i-wave"/></svg></div>
+      <div class="txt"><h2 id="stTitle">Conectando…</h2><p id="stSub"></p></div>
+      <button class="pill" id="approveAll" hidden>Aplicar</button>
+      <button class="pill" id="fixConn" hidden>Ajustar</button>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="k">Solista</div><div class="v solo" id="soloName">—</div></div>
+      <div class="metric"><div class="k">Teclado</div><div class="v key" id="keyDb">—</div></div>
+      <div class="metric"><div class="k">Fone</div><div class="v" id="busDb">—</div><div class="cap"><i id="busBar"></i></div></div>
+    </div>
+  </section>
+
+  <main class="board">
+    <section class="zone" id="zVoc"><div class="zhead">Vozes <span id="vCount"></span></div><div class="cards" id="vocals"></div></section>
+    <section class="zone" id="zBand"><div class="zhead">Banda <span id="bCount"></span></div><div class="legend" id="legend"></div><div class="cards" id="band"></div></section>
+  </main>
+
+  <div class="dock" id="dock">
+    <div class="dk" id="dkEmpty"><div class="dk-empty">Toque num canal para ajustar</div></div>
+    <div class="dk" id="dkSel" hidden>
+      <div class="dk-info"><b id="dkName"></b>
+        <div class="sub"><span class="tag" id="dkTag" hidden>Solista</span>
+          <span class="lock" id="dkLock" hidden><svg width="12" height="12"><use href="#i-lock"/></svg><span id="dkLt"></span></span>
+          <span class="why" id="dkWhy"></span>
+          <button class="apply" id="dkApply" hidden></button></div></div>
+      <div class="val"><b id="dkV"></b><small id="dkB"></small></div>
+      <div class="step"><button id="dkDn" aria-label="Diminuir"><svg width="22" height="22"><use href="#i-minus"/></svg></button><i></i>
+        <button id="dkUp" aria-label="Aumentar"><svg width="22" height="22"><use href="#i-plus"/></svg></button></div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="busScrim" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="busTitle">
+    <div class="grab"></div>
+    <div class="sheethead"><h2 id="busTitle">Mesa</h2><button id="busDone">OK</button></div>
+
+    <div class="seg two" id="srcSeg" role="radiogroup" aria-label="Origem">
+      <span class="thumb" id="srcThumb"></span>
+      <button data-src="real" role="radio">Mesa real</button>
+      <button data-src="sim" role="radio">Simulador</button>
+    </div>
+    <div class="connst" id="connSt"><i></i><div><b id="connTitle">—</b><span id="connSub"></span></div></div>
+
+    <div id="realBox">
+      <span class="lbl">Endereço da mesa</span>
+      <form class="ipform" id="ipForm" autocomplete="off">
+        <input id="ipIn" inputmode="decimal" placeholder="192.168.1.104" aria-label="IP da mesa" spellcheck="false" autocapitalize="off">
+        <input id="portIn" inputmode="numeric" placeholder="10023" aria-label="Porta">
+        <button class="pill" type="submit">Conectar</button>
+      </form>
+      <div class="group">
+        <button class="cell" id="scanBtn" type="button"><svg width="22" height="22"><use href="#i-wave"/></svg><span id="scanTxt">Procurar mesas na rede</span></button>
+        <div id="foundList"></div>
+      </div>
+    </div>
+
+    <span class="lbl">Bus do fone</span>
+    <div class="buses" id="buses"></div>
+    <p class="note">Trocar de mesa ou de bus desliga o assistente e lê tudo de novo. A mesa real e o bus ficam salvos no config.json.</p>
+
+    <span class="lbl">Mix base</span>
+    <div class="group">
+      <button class="cell" id="saveBase"><svg width="22" height="22"><use href="#i-save"/></svg>Salvar mix atual como base</button>
+      <button class="cell" id="restoreBase"><svg width="22" height="22"><use href="#i-undo"/></svg>Voltar à mix base</button>
+    </div>
+
+    <span class="lbl">Atividade</span>
+    <div class="group" id="hist"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const SRC_LABEL = { engine: 'Assistente', manual: 'Mesa', web: 'Você' };
+  const MODES = ['off', 'assist', 'auto'];
+  const MODE_HINT = {
+    off: 'Só observa. Nada é alterado na mesa.',
+    assist: 'Sugere ajustes — você aprova cada um.',
+    auto: 'Ajusta sozinho, suavemente, sem tocar no teclado.',
+  };
+  const MIN_REL = -30, MAX_REL = 10;
+
+  let ws = null, state = null, cardsKey = '', cardEls = new Map(), selected = null;
+  try { selected = Number(localStorage.getItem('sel')) || null; } catch {}
+
+  function fmt(x, digits = 1, sign = false) {
+    if (x == null || !Number.isFinite(x)) return '—';
+    let s = x.toFixed(digits);
+    if (/^-0(\.0+)?$/.test(s)) s = s.slice(1);
+    if (sign && x > 0 && s !== (0).toFixed(digits)) s = '+' + s;
+    return s.replace('-', '−');
+  }
+  const pct = (rel) => Math.max(0, Math.min(100, ((rel - MIN_REL) / (MAX_REL - MIN_REL)) * 100));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const setText = (el, txt) => { if (el.textContent !== txt) el.textContent = txt; };
+  const setHTML = (el, html) => { if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; } };
+  const icon = (id, size = 24) => `<svg width="${size}" height="${size}"><use href="#i-${id}"/></svg>`;
+  const pl = (k, a, b) => (k === 1 ? a : b);
+  // Nos cards de voz o prefixo "VOZ" é redundante: a seção já diz que são vozes.
+  const shortName = (c) => (c.role === 'vocal' ? c.name.replace(/^VOZ\s+/i, '') : c.name) || `ch ${c.ch}`;
+
+  function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+  function connect() {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'state') { state = m; render(); }
+    };
+    ws.onclose = () => { renderOffline(); setTimeout(connect, 1500); };
+    ws.onerror = () => ws.close();
+  }
+
+  // ---------- Interações ----------
+  $('modes').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (b) send({ type: 'mode', mode: b.dataset.mode });
+  });
+  $('approveAll').onclick = () => send({ type: 'approveAll' });
+  $('saveBase').onclick = () => { if (confirm('Salvar os envios atuais como mix base?')) send({ type: 'saveBase' }); };
+  $('restoreBase').onclick = () => { if (confirm('Voltar todos os envios para a mix base?')) send({ type: 'restoreBase' }); };
+
+  const nudge = (d) => {
+    const c = state?.channels.find((x) => x.ch === selected);
+    if (!c) return;
+    if (c.role === 'keyboard') return send({ type: 'keyboard', delta: d });
+    if (c.sendDb != null) send({ type: 'setSend', ch: c.ch, db: Math.round((c.sendDb + d) * 2) / 2 });
+  };
+  $('dkDn').onclick = () => nudge(-1);
+  $('dkUp').onclick = () => nudge(+1);
+  $('dkApply').onclick = () => selected && send({ type: 'approve', ch: selected });
+
+  function select(ch) {
+    selected = ch;
+    try { localStorage.setItem('sel', ch ?? ''); } catch {}
+    if (state) render();
+  }
+
+  // ---------- Folha "Mesa": origem, IP, procurar, bus, mix base, atividade ----------
+  const scrim = $('busScrim');
+  const fillIp = () => {
+    if (!state) return;
+    $('ipIn').value = state.realMixer.host;
+    $('portIn').value = state.realMixer.port === 10023 ? '' : state.realMixer.port;
+  };
+  const openSheet = (open) => {
+    scrim.classList.toggle('open', open);
+    scrim.setAttribute('aria-hidden', !open);
+    if (open) { send({ type: 'busNames' }); fillIp(); renderSheet(); }
+    else document.activeElement?.blur();
+  };
+  $('conn').onclick = () => openSheet(true);
+  $('fixConn').onclick = () => openSheet(true);
+  $('busDone').onclick = () => openSheet(false);
+  scrim.addEventListener('click', (e) => { if (e.target === scrim) openSheet(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') openSheet(false); });
+
+  const IP_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+  function connectReal(host, port) {
+    host = String(host).trim();
+    if (!IP_RE.test(host)) { $('ipIn').focus(); $('ipIn').select(); return; }
+    port = port === '' || port == null ? 10023 : Number(port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) { $('portIn').focus(); return; }
+    send({ type: 'connect', source: 'real', host, port });
+    document.activeElement?.blur();
+  }
+  $('ipForm').addEventListener('submit', (e) => { e.preventDefault(); connectReal($('ipIn').value, $('portIn').value); });
+  $('srcSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-src]');
+    if (!b || !state) return;
+    const wantSim = b.dataset.src === 'sim';
+    if (wantSim === state.simulated) return;
+    if (wantSim) send({ type: 'connect', source: 'sim' });
+    else connectReal($('ipIn').value || state.realMixer.host, $('portIn').value);
+  });
+  $('scanBtn').onclick = () => send({ type: 'scan' });
+  $('foundList').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-host]');
+    if (!b) return;
+    $('ipIn').value = b.dataset.host;
+    $('portIn').value = '';
+    connectReal(b.dataset.host, '');
+  });
+  $('buses').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-bus]');
+    if (!b || !state) return;
+    const bus = +b.dataset.bus;
+    if (bus !== state.bus) send({ type: 'setBus', bus });
+  });
+
+  function renderSheet() {
+    const s = state;
+    if (!s) return;
+    $('srcThumb').style.transform = `translateX(${s.simulated ? 100 : 0}%)`;
+    for (const b of $('srcSeg').querySelectorAll('button')) {
+      const on = (b.dataset.src === 'sim') === s.simulated;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', on);
+    }
+    $('realBox').hidden = s.simulated;
+
+    const st = $('connSt');
+    const where = s.simulated ? 'Simulador neste computador' : `${s.mixer.host}${s.mixer.port !== 10023 ? ':' + s.mixer.port : ''}`;
+    st.className = 'connst' + (s.connected ? ' on' : s.switching ? ' wait' : '');
+    if (s.switching) { setText($('connTitle'), 'Conectando…'); setText($('connSub'), where); }
+    else if (s.connected) {
+      const id = [s.mixer.model, s.mixer.name && `“${s.mixer.name}”`].filter(Boolean).join(' ');
+      setText($('connTitle'), id ? `Conectado · ${id}` : 'Conectado');
+      setText($('connSub'), s.mixer.fw ? `${where} · firmware ${s.mixer.fw}` : where);
+    } else {
+      setText($('connTitle'), 'Sem resposta');
+      setText($('connSub'), s.connError || `Nenhuma resposta de ${where}. Confira o IP e se o computador está na rede da mesa.`);
+    }
+
+    const sc = s.scan || { running: false, found: [], at: null };
+    $('scanBtn').disabled = sc.running;
+    setText($('scanTxt'), sc.running ? 'Procurando…' : sc.at ? 'Procurar de novo' : 'Procurar mesas na rede');
+    let list = '';
+    if (sc.running) list = '<div class="scanmsg"><span class="spin"></span>Perguntando à rede quem é X32/M32…</div>';
+    else if (sc.at && !sc.found.length) list = '<div class="scanmsg">Nenhuma mesa respondeu. Confira se o computador está no Wi-Fi ou cabo da mesa.</div>';
+    else list = sc.found.map((f) => {
+      const cur = !s.simulated && f.host === s.mixer.host;
+      return `<button class="found${cur ? ' cur' : ''}" data-host="${esc(f.host)}" type="button"><div><b>${esc([f.model, f.name].filter(Boolean).join(' · ') || 'Mesa')}</b><span>${esc(f.host)}${f.fw ? ' · fw ' + esc(f.fw) : ''}</span></div><span class="go">${cur ? 'Em uso' : 'Usar'}</span></button>`;
+    }).join('');
+    setHTML($('foundList'), list);
+
+    const names = s.busNames || [];
+    setHTML($('buses'), names.map((n, i) => `<button class="bus${i + 1 === s.bus ? ' sel' : ''}" data-bus="${i + 1}">
+      <b>${i + 1}</b><span>${esc(n || '—')}</span></button>`).join(''));
+
+    const histHtml = s.history.length
+      ? s.history.slice(0, 15).map((h) => {
+          const t = new Date(h.tEnd || h.t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          return `<div class="h"><b>${esc(h.name)}</b><span class="d">${fmt(h.from, 1, true)} → ${fmt(h.to, 1, true)}</span>
+            <span class="m">${t}</span><span class="src ${h.source}">${SRC_LABEL[h.source] || esc(h.source)}</span></div>`;
+        }).join('')
+      : '<div class="empty">Nenhum ajuste ainda.</div>';
+    setHTML($('hist'), histHtml);
+  }
+  const busLabel = (s) => { const n = (s.busNames || [])[s.bus - 1]; return n ? `Bus ${s.bus} · ${n}` : `Bus ${s.bus}`; };
+
+  // ---------- Cards ----------
+  // Colunas pela largura da tela; as linhas dividem a altura disponível.
+  const colsFor = () => (innerWidth >= 1000 ? 8 : innerWidth >= 700 ? 6 : 4);
+  function layout() {
+    if (!state) return;
+    const cols = colsFor();
+    for (const [zone, grid, role] of [['zVoc', 'vocals', 'vocal'], ['zBand', 'band', 'ref']]) {
+      const n = state.channels.filter((c) => c.role === role).length + (role === 'ref' && state.channels.some((c) => c.role === 'keyboard') ? 1 : 0);
+      const rows = Math.max(1, Math.ceil(n / cols));
+      $(zone).style.setProperty('--rows', rows);
+      $(grid).style.setProperty('--rows', rows);
+      $(grid).style.setProperty('--cols', cols);
+      $(zone).hidden = n === 0;
+    }
+  }
+  addEventListener('resize', layout);
+
+  // Cor por grupo de instrumento (campo "group" no config.json). Grupo novo ganha a próxima cor livre.
+  const GROUP_COLORS = { voz: 'var(--blue)', bateria: 'var(--green)', guitarra: 'var(--pink)', baixo: 'var(--orange)',
+    'violão': 'var(--brown)', violao: 'var(--brown)', sopro: 'var(--purple)', teclado: 'var(--yellow)',
+    percussão: 'var(--teal)', percussao: 'var(--teal)' };
+  const SPARE = ['var(--teal)', 'var(--indigo)', 'var(--mint)', 'var(--purple)', 'var(--brown)'];
+  const groupColor = (g) => {
+    if (!g) return 'var(--gray)';
+    if (!GROUP_COLORS[g]) GROUP_COLORS[g] = SPARE[Object.keys(GROUP_COLORS).length % SPARE.length];
+    return GROUP_COLORS[g];
+  };
+
+  function buildCards(channels) {
+    cardEls = new Map();
+    const v = $('vocals'), b = $('band');
+    v.innerHTML = ''; b.innerHTML = '';
+    // Banda agrupada: cada grupo junto, na ordem em que aparece
+    const order = [];
+    for (const c of channels) if (c.role === 'ref' && !order.includes(c.group)) order.push(c.group);
+    const list = [...channels].sort((a, b) => (a.role === 'ref' && b.role === 'ref' ? order.indexOf(a.group) - order.indexOf(b.group) : 0));
+    const keys = channels.filter((c) => c.role === 'keyboard');
+    if (keys.length) {
+      // Um card só para o teclado (L e R andam juntos)
+      const el = document.createElement('button');
+      el.className = 'card keyboard';
+      el.style.setProperty('--c', groupColor('teclado'));
+      el.innerHTML = `<div class="lvl"><i class="fill" style="height:${pct(0)}%"></i><i class="kl" style="bottom:${pct(0)}%"></i></div>
+        <div class="ctop"><span class="name">KEYS</span><span class="flag"></span></div>
+        <div class="cbot"><span class="rel"></span><span class="unit">dB</span></div>`;
+      el.addEventListener('click', () => select(keys[0].ch));
+      const q = (sel) => el.querySelector(sel);
+      cardEls.set(keys[0].ch, { el, isKey: true, name: q('.name'), rel: q('.rel') });
+      b.appendChild(el);
+    }
+    $('legend').innerHTML = (keys.length ? ['teclado'] : []).concat(order.filter(Boolean)).map((g) => `<b style="--c:${groupColor(g)}">${g.charAt(0).toUpperCase() + g.slice(1)}</b>`).join('');
+    for (const c of list) {
+      if (c.role === 'keyboard') continue;
+      const el = document.createElement('button');
+      el.className = `card ${c.role}`;
+      el.style.setProperty('--c', groupColor(c.group || (c.role === 'vocal' ? 'voz' : '')));
+      el.innerHTML = `<div class="lvl"><i class="fill"></i><i class="kl" style="bottom:${pct(0)}%"></i>${c.role === 'ref' && c.ceilingDb != null ? `<i class="cl" style="bottom:${pct(c.ceilingDb)}%"></i>` : ''}<i class="tg" hidden></i></div>
+        <div class="ctop"><span class="name"></span><span class="flag"></span></div>
+        <div class="cbot"><span class="rel"></span><span class="stag" hidden>SOLO</span></div>`;
+      el.addEventListener('click', () => select(c.ch));
+      const q = (s) => el.querySelector(s);
+      cardEls.set(c.ch, { el, name: q('.name'), flag: q('.flag'), fill: q('.fill'), tg: q('.tg'), rel: q('.rel'), stag: q('.stag') });
+      (c.role === 'vocal' ? v : b).appendChild(el);
+    }
+    layout();
+  }
+
+  // Motivos que só repetem o que a tela já mostra ficam ocultos
+  const QUIET = new Set(['ok', 'em silêncio', 'referência', '']);
+  function why(c) {
+    if (c.held) return '';
+    if (!c.active && c.reason === 'em silêncio') return 'Em silêncio';
+    const r = (c.reason || '').replace(/^solista → /, '');
+    return QUIET.has(r) ? '' : r.charAt(0).toUpperCase() + r.slice(1);
+  }
+
+  function setStatus(tone, iconId, title, sub) {
+    const ic = $('stIcon');
+    ic.style.setProperty('--tone', `var(--${tone})`);
+    if (ic.dataset.i !== iconId) { ic.innerHTML = icon(iconId, 22); ic.dataset.i = iconId; }
+    setText($('stTitle'), title);
+    setText($('stSub'), sub);
+  }
+
+  function renderOffline() {
+    $('conn').classList.remove('on');
+    setText($('mixer'), 'Sem servidor');
+    setStatus('red', 'warn', 'Sem conexão', 'O Mix Assist não está respondendo. Tentando de novo…');
+    $('approveAll').hidden = true;
+    $('fixConn').hidden = true;
+  }
+
+  function render() {
+    const s = state;
+    const voices = s.channels.filter((c) => c.role === 'vocal');
+    const band = s.channels.filter((c) => c.role === 'ref');
+    const relOf = (c) => (c.contribDb != null && s.keyContrib != null ? c.contribDb - s.keyContrib : null);
+    const pending = s.suggestions.filter((g) => g.from != null);
+    const busWarn = s.suggestions.find((g) => g.from == null);
+    // Instrumento: acima do seu limite (teto do grupo). Voz: acima do teclado.
+    const limitOf = (c) => (c.role === 'ref' && c.ceilingDb != null ? c.ceilingDb : 0);
+    // Folga de 1 dB = mesma tolerância do motor (zona morta + arredondamento): só fica vermelho o que ele ainda vai corrigir.
+    const isOver = (c) => c.active && (relOf(c) ?? -99) > limitOf(c) + 1;
+    const overs = [...voices, ...band].filter(isOver);
+
+    // Topo
+    $('conn').classList.toggle('on', s.connected);
+    setText($('mixer'), s.connected ? busLabel(s) : `Sem resposta · Bus ${s.bus}`);
+    $('simBadge').hidden = !s.simulated;
+    $('thumb').style.transform = `translateX(${Math.max(0, MODES.indexOf(s.mode)) * 100}%)`;
+    for (const b of $('modes').querySelectorAll('button')) {
+      const on = b.dataset.mode === s.mode;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', on);
+    }
+    setText($('modeHint'), MODE_HINT[s.mode] || '');
+    if (scrim.classList.contains('open')) renderSheet();
+
+    // Status
+    const n = pending.length;
+    if (s.switching) setStatus('yellow', 'wave', 'Conectando à mesa', s.simulated ? 'Simulador' : s.mixer.host);
+    else if (!s.connected) setStatus('red', 'warn', 'Mesa sem resposta', s.connError || `Nada responde em ${s.simulated ? 'simulador' : s.mixer.host}.`);
+    else if (!s.ready) setStatus('yellow', 'wave', 'Calibrando', 'Toque o teclado por alguns segundos.');
+    else if (overs.length) setStatus('red', 'warn',
+      overs.length === 1 ? `${overs[0].name} acima do limite` : `${overs.length} canais acima do limite`,
+      overs.length === 1 ? 'Abaixe esse canal no fone.' : overs.map((c) => c.name).join(', '));
+    else if (busWarn) setStatus('orange', 'warn', 'Fone alto demais', 'Abaixe o volume geral do fone.');
+    else if (s.mode === 'off') setStatus('gray', 'off', 'Assistente desligado', 'A mix está só sendo monitorada.');
+    else if (n && s.mode === 'assist') setStatus('blue', 'sliders', `${n} ${pl(n, 'ajuste sugerido', 'ajustes sugeridos')}`, 'Toque em Aplicar para aceitar.');
+    else if (n) setStatus('blue', 'sliders', 'Ajustando', `${n} ${pl(n, 'canal', 'canais')} em ajuste suave.`);
+    else setStatus('green', 'check', 'Tudo alinhado', 'Nada passa do teclado.');
+    $('fixConn').hidden = s.connected || s.switching;
+    const showAll = s.connected && s.mode === 'assist' && n > 0;
+    $('approveAll').hidden = !showAll;
+    if (showAll) setText($('approveAll'), n > 1 ? `Aplicar ${n}` : 'Aplicar');
+
+    // Métricas
+    const sn = $('soloName');
+    setText(sn, s.soloist ? shortName({ role: 'vocal', ...s.soloist }) : 'Ninguém');
+    sn.classList.toggle('dim', !s.soloist);
+    setHTML($('keyDb'), s.keyContrib == null ? '—' : `${fmt(s.keyContrib)}<small>dB</small>`);
+    setHTML($('busDb'), s.busDb == null ? '—' : `${fmt(s.busDb)}<small>dBFS</small>`);
+    const bus = s.busDb == null ? -120 : s.busDb;
+    const bar = $('busBar');
+    bar.style.width = `${Math.max(0, Math.min(100, ((bus + 60) / 60) * 100))}%`;
+    bar.style.background = bus > -3 ? 'var(--red)' : bus > -9 ? 'var(--orange)' : 'var(--green)';
+
+    // Cards
+    const key = s.channels.map((c) => `${c.ch}:${c.role}:${c.group}:${c.ceilingDb}`).join('|');
+    if (key !== cardsKey) { cardsKey = key; buildCards(s.channels); }
+    const singing = voices.filter((c) => c.active).length;
+    setText($('vCount'), singing ? `${singing} cantando` : 'ninguém cantando');
+    const playing = band.filter((c) => c.active).length;
+    setText($('bCount'), `${playing} de ${band.length} tocando`);
+
+    const keyChs = s.channels.filter((c) => c.role === 'keyboard');
+    const keySend = keyChs.length && keyChs.every((k) => k.sendDb != null)
+      ? keyChs.reduce((a, k) => a + k.sendDb, 0) / keyChs.length : null;
+    for (const c of s.channels) {
+      const e = cardEls.get(c.ch);
+      if (!e) continue;
+      if (e.isKey) {
+        // O teclado é a referência (linha amarela): o card mostra o envio dele no fone.
+        const on = keyChs.some((k) => k.active);
+        e.el.classList.toggle('silent', !on);
+        e.el.classList.toggle('sel', c.ch === selected);
+        setText(e.rel, keySend == null ? '—' : fmt(keySend, 1, true));
+        e.el.setAttribute('aria-label', `Teclado, envio ${keySend == null ? 'desconhecido' : fmt(keySend, 1, true) + ' dB'}`);
+        continue;
+      }
+      const rel = relOf(c);
+      const show = rel != null && c.active;
+      const over = show && isOver(c);
+      const pend = s.mode === 'assist' && c.target != null && c.approved == null;
+      e.el.classList.toggle('solo', c.solo);
+      e.stag.hidden = !c.solo;
+      e.el.classList.toggle('silent', !c.active);
+      e.el.classList.toggle('over', over);
+      e.el.classList.toggle('sel', c.ch === selected);
+      setText(e.name, shortName(c));
+      e.fill.style.height = show ? `${pct(rel)}%` : '0%';
+      setText(e.rel, show ? fmt(rel, 0, true) : '—');
+      const tg = c.targetContribDb != null && s.keyContrib != null && c.active;
+      e.tg.hidden = !tg;
+      if (tg) e.tg.style.bottom = `${pct(c.targetContribDb - s.keyContrib)}%`;
+      const flag = c.held ? 'lock' : pend ? 'dot' : '';
+      if (e.flag.dataset.f !== flag) {
+        e.flag.dataset.f = flag;
+        e.flag.innerHTML = flag === 'lock' ? icon('lock', 13) : flag === 'dot' ? '<span class="dot"></span>' : '';
+      }
+      e.el.setAttribute('aria-label', `${c.name}${show ? `, ${fmt(rel, 0, true)} dB do teclado` : ', em silêncio'}`);
+    }
+
+    // Barra de ajuste do canal selecionado
+    let c = s.channels.find((x) => x.ch === selected);
+    if (c?.role === 'keyboard') {
+      c = { ch: c.ch, role: 'keyboard', name: keyChs.length > 1 ? 'Teclado (L + R juntos)' : 'Teclado', sendDb: keySend,
+        target: null, solo: false, held: false, reason: 'Referência: baixar o teclado baixa junto o limite dos instrumentos' };
+    }
+    $('dkEmpty').hidden = !!c;
+    $('dkSel').hidden = !c;
+    if (c) {
+      const pend = s.mode === 'assist' && c.target != null && c.approved == null;
+      setText($('dkName'), c.name);
+      $('dkTag').hidden = !c.solo;
+      $('dkLock').hidden = !c.held;
+      if (c.held) setText($('dkLt'), `Travado ${c.holdLeftSec}s`);
+      $('dkApply').hidden = !pend;
+      if (pend) setText($('dkApply'), `Aplicar ${fmt(c.target, 1, true)}`);
+      $('dkWhy').hidden = pend;
+      setText($('dkWhy'), why(c));
+      setText($('dkV'), fmt(c.sendDb, 1, true));
+      const moving = c.target != null && !pend;
+      $('dkB').classList.toggle('to', moving);
+      setText($('dkB'), moving ? `→ ${fmt(c.target, 1, true)}` : 'dB envio');
+      $('dkDn').disabled = $('dkUp').disabled = c.sendDb == null;
+    }
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>
