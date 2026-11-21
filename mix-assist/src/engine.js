@@ -1,5 +1,6 @@
 // Motor de regras PURO: sem rede, sem timers. Todo método recebe `now` (ms).
 import { linToDb, dbToFader, faderToDb } from './osc.js';
+import { normalizeMap } from './automap.js';
 
 export const DEFAULTS = {
   gateDb: -45,
@@ -40,7 +41,7 @@ export const DEFAULTS = {
 const MANUAL_TOL_DB = 0.4;
 const MERGE_WINDOW_MS = 3000;
 const HISTORY_MAX = 200;
-const ROLE_ORDER = { keyboard: 0, vocal: 1, ref: 2 };
+const ROLE_ORDER = { anchor: 0, vocal: 1, ref: 2 };
 
 const round = (x, step) => Math.round(x / step) * step;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
@@ -49,14 +50,15 @@ const quantize = (db) => faderToDb(dbToFader(db));
 export class MixEngine {
   constructor(map, opts = {}) {
     this.opts = { ...DEFAULTS, ...opts };
-    const keys = map.filter((c) => c.role === 'keyboard');
-    if (keys.length < 1) throw new Error('O mapa precisa ter ao menos um canal com role "keyboard"');
+    // "keyboard" (configs antigos) vira "anchor": o instrumento do dono do fone.
+    map = normalizeMap(map);
+    const keys = map.filter((c) => c.role === 'anchor');
     this.channels = new Map();
     for (const c of map) {
       this.channels.set(c.ch, {
         ch: c.ch,
         role: c.role,
-        group: c.group || (c.role === 'vocal' ? 'voz' : c.role === 'keyboard' ? 'teclado' : ''),
+        group: c.group,
         // Teto do instrumento em relação ao teclado: do canal, senão do grupo, senão o padrão.
         ceilingDb: c.role !== 'ref' ? null
           : Number.isFinite(c.ceilingDb) ? c.ceilingDb
@@ -86,8 +88,11 @@ export class MixEngine {
         reason: '',
       });
     }
-    // Teclado pode ser mono (1 canal) ou estéreo (L/R): a referência é a média de potência.
+    // Âncora pode ser mono (1 canal) ou estéreo (L/R): a referência é a média de potência.
+    // (Os nomes internos "key*" são históricos: valem para qualquer âncora.)
     this.keyChs = keys.map((k) => k.ch);
+    this.anchorName = keys[0].group;
+    this.block = null; // motivo pelo qual o assistente não pode ser ligado (ex.: patch mudou)
     this.mode = 'off';
     this.soloist = null;
     this.challenger = null;
@@ -197,7 +202,7 @@ export class MixEngine {
 
   onUserSend(ch, db, now) {
     const c = this.channels.get(ch);
-    if (!c || c.role === 'keyboard') return null; // o teclado nunca é alterado pelo app
+    if (!c || c.role === 'anchor') return null; // o teclado nunca é alterado pelo app
     db = clamp(db, -90, 10);
     this._manual(c, db, now, 'web', 'ajuste pela página');
     c.sendDb = db;
@@ -216,7 +221,7 @@ export class MixEngine {
     for (const k of ks) {
       const db = Math.round(clamp(k.sendDb + deltaDb, -90, 10) * 100) / 100;
       if (db === k.sendDb) continue;
-      this._log(now, k, k.sendDb, db, 'web', 'teclado ajustado pela página');
+      this._log(now, k, k.sendDb, db, 'web', `${this.anchorName} ajustado pela página`);
       k.sendDb = db;
       k.baseDb = db;
       this._remember(k, db, now);
@@ -272,13 +277,21 @@ export class MixEngine {
 
   setMode(mode) {
     if (!['off', 'assist', 'auto'].includes(mode)) throw new Error(`Modo inválido: ${mode}`);
+    if (mode !== 'off' && this.block) throw new Error(`Assistente bloqueado: ${this.block}`);
     this.mode = mode;
     if (mode !== 'assist') for (const c of this.channels.values()) c.approved = null;
   }
 
+  // Bloqueio de segurança (ex.: o patch da mesa não bate com o mapa salvo).
+  // Enquanto houver motivo, o assistente fica em "Desligado" e não pode ser ligado.
+  setBlock(reason) {
+    this.block = reason || null;
+    if (this.block) this.setMode('off');
+  }
+
   approve(ch) {
     const c = this.channels.get(ch);
-    if (c && c.role !== 'keyboard' && c.target != null) c.approved = c.target;
+    if (c && c.role !== 'anchor' && c.target != null) c.approved = c.target;
   }
 
   approveAll() {
@@ -292,7 +305,7 @@ export class MixEngine {
   restoreBase(now) {
     const actions = [];
     for (const c of this.channels.values()) {
-      if (c.role === 'keyboard' || c.baseDb == null || c.sendDb == null) continue;
+      if (c.role === 'anchor' || c.baseDb == null || c.sendDb == null) continue;
       if (Math.abs(c.baseDb - c.sendDb) < 0.05) continue;
       this._log(now, c, c.sendDb, c.baseDb, 'web', 'voltar à mix base');
       c.sendDb = c.baseDb;
@@ -366,7 +379,7 @@ export class MixEngine {
       c.hardCap = false;
       c.fixedTarget = false;
       c.fastTarget = null;
-      if (c.role === 'keyboard') {
+      if (c.role === 'anchor') {
         c.reason = 'referência';
         continue;
       }
@@ -387,7 +400,7 @@ export class MixEngine {
         continue;
       }
       if (!this.ready) {
-        c.reason = 'aguardando o teclado tocar';
+        c.reason = `aguardando o ${this.anchorName} tocar`;
         continue;
       }
       if (!this.isActive(c)) {
@@ -407,7 +420,7 @@ export class MixEngine {
       const hi = Math.min(10, c.baseDb + o.maxBoostDb);
       let goal = round(clamp(desired, lo, hi), 0.5);
       if (Object.is(goal, -0)) goal = 0;
-      const lim = `${c.ceilingDb > 0 ? '+' : ''}${c.ceilingDb} dB do teclado`;
+      const lim = `${c.ceilingDb > 0 ? '+' : ''}${c.ceilingDb} dB do ${this.anchorName}`;
       const atCutLimit = desired < lo - 0.5;
       const cutNote = `no limite de corte (${o.maxCeilingCutDb} dB abaixo da mix base) — confira o ganho do canal na mesa`;
       if (Math.abs(goal - c.sendDb) < o.deadbandDb) {
@@ -454,14 +467,14 @@ export class MixEngine {
     if (!this.ready || !this.isActive(c)) {
       if (over) set(max, max, `voz acima de ${fmt(max)} → teto`, true);
       else if (c.move && c.move.goal < c.sendDb) set(c.move.goal, c.move.goal, 'terminando a descida', true); // nunca sobe em silêncio
-      else c.reason = this.ready ? 'em silêncio' : 'aguardando o teclado tocar';
+      else c.reason = this.ready ? 'em silêncio' : `aguardando o ${this.anchorName} tocar`;
       return;
     }
     if (solo && c.ch === solo.ch && soloTarget != null) {
       const goal = clamp(soloTarget - c.envDb, back, max);
       const fastGoal = clamp(soloTarget - c.fastDb, back, max);
       const note = goal >= max ? ` (no máximo de ${fmt(max)})` : '';
-      set(goal, fastGoal, `solista → acompanha o teclado${note}`);
+      set(goal, fastGoal, `solista → acompanha o ${this.anchorName}${note}`);
     } else if (solo) {
       set(back, back, `backing → ${fmt(back)}`, true);
     } else if (over) {
@@ -499,7 +512,7 @@ export class MixEngine {
     if (this.mode === 'off') return { actions, suggestions };
 
     for (const c of this.channels.values()) {
-      if (c.role === 'keyboard' || c.sendDb == null) continue;
+      if (c.role === 'anchor' || c.sendDb == null) continue;
       if (this.isHeld(c, now)) {
         c.move = null;
         c.wantSince = null;
@@ -607,7 +620,7 @@ export class MixEngine {
       .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.ch - b.ch)
       .map((c) => {
         const contribDb =
-          c.role === 'keyboard'
+          c.role === 'anchor'
             ? keyContrib
             : c.sendDb == null || c.pow == null
               ? null
@@ -635,6 +648,8 @@ export class MixEngine {
       });
     return {
       mode: this.mode,
+      block: this.block,
+      anchorName: this.anchorName,
       ready: this.ready,
       soloist: solo ? { ch: solo.ch, name: solo.name } : null,
       keyContrib,

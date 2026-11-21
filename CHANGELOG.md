@@ -6,6 +6,26 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Não publicado]
 
+### Adicionado
+
+- Mapa de canais dinâmico ([#1](https://github.com/gutoglup/mixTree/issues/1)):
+  - leitura do patch da mesa inteira (canais 1–32): `/ch/NN/config/name`, `/config/icon`, `/config/color` e envio ligado para o bus do fone (`X32Client.scanChannels`), ao conectar, ao trocar de bus, a cada 20 s e pela página;
+  - classificador puro (`src/automap.js`) que sugere papel e grupo de cada canal pelo nome (regras configuráveis em `config.json → autoMap.rules`) e, quando o nome não diz nada, pelo ícone da X32 (`autoMap.icons`);
+  - folha **Canais** na interface para revisar a sugestão, escolher de quem é o fone e confirmar; o mapa só vale após confirmação e é gravado em `config.json` (apenas com mesa real);
+  - checagem de troca de patch: cada canal confirmado guarda o nome e o ícone vistos (`seen`); se mudarem na mesa, o assistente é desligado e bloqueado (`MixEngine.setBlock`) até o mapa ser revisado;
+  - simulador com os 32 canais, ícones por instrumento e troca de nome/ícone por OSC (`/ch/NN/config/name` com argumento), como na mesa real.
+- Edição do `config.json` por chave de primeiro nível, sensível a strings, preservando a formatação do restante do arquivo (`src/configfile.js`).
+- Testes: classificador, sugestão, confirmação e checagem de patch (`test/automap.test.js`), edição do config (`test/configfile.test.js`), âncora genérica e bloqueio no motor, e integração UDP cliente ↔ simulador (`test/x32-sim.test.js`). Total: 91 casos.
+
+### Alterado
+
+- O papel `keyboard` passa a se chamar `anchor` (âncora): o instrumento do dono do fone, que o motor nunca altera e que serve de referência para os tetos. `keyboard` continua aceito como sinônimo, com grupo `teclado`. Textos da interface e motivos do motor usam o nome do grupo da âncora (ex.: "acima do limite (−8 dB do guitarra)").
+- O snapshot do motor expõe `role: "anchor"`, `anchorName` e `block`; a mensagem WebSocket `anchor` substitui `keyboard` (que segue aceita).
+
+### CI
+
+- Workflow do GitHub Actions (`.github/workflows/ci.yml`) que roda a suíte de testes do `mix-assist` em cada pull request e em push na `main`, em matriz Node.js 20, 22 e 24, com cache do npm e cancelamento de execuções antigas do mesmo PR.
+
 ### Documentação
 
 - README na raiz do repositório com estrutura, execução, configuração e parâmetros do motor.

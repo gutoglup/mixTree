@@ -1,6 +1,7 @@
 // X32 falsa para testar em casa: responde OSC, empurra meters e toca uma "música".
 import dgram from 'node:dgram';
 import { encode, decode, faderToDb, dbToFader, encodeMeterBlob, dbToLin, pad2 } from './osc.js';
+import { normalizeRole, X32_ICONS, CHANNEL_COUNT } from './automap.js';
 
 const SUB_MS = 10000;
 const SECTION_SEC = 20;
@@ -17,7 +18,7 @@ function assignPersonas(channels) {
   const out = new Map();
   for (const c of channels) {
     let p = 'Quieto';
-    if (c.role === 'keyboard') p = 'Teclado';
+    if (normalizeRole(c.role) === 'anchor') p = 'Teclado';
     else if (c.role === 'vocal') p = VOCAL_PERSONAS[vocal++] ?? 'Mudo';
     else if (c.group === 'bateria') p = DRUM_PERSONAS[drum++] ?? 'Quieto';
     else if (c.group === 'baixo') p = 'Baixo';
@@ -27,18 +28,29 @@ function assignPersonas(channels) {
   return out;
 }
 
+// Ícone que cada papel simulado mostra na mesa (para testar a detecção por ícone).
+const PERSONA_ICON = {
+  Teclado: X32_ICONS.keyboard, 'Voz 1': X32_ICONS.femaleVocal, 'Voz 2': X32_ICONS.maleVocal,
+  'Voz 3': X32_ICONS.handheldMic, 'Voz 4': X32_ICONS.handheldMic, Bumbo: X32_ICONS.kickFront,
+  Caixa: X32_ICONS.snareTop, Prato: X32_ICONS.hiHat, Baixo: X32_ICONS.electricBass, Guitarra: X32_ICONS.lesPaul,
+};
+
 const SIM_BUS_NAMES = ['MON 1', 'MON 2', 'BATERA', 'BAIXO', 'TECLADO', 'VS 1', 'VS 2', 'IEM BAT', '', '', '', '', 'FX 1', 'FX 2', 'FX 3', 'FX 4'];
 
 export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
   let busStr = pad2(bus);
   const sock = dgram.createSocket('udp4');
   const t0 = Date.now();
-  const state = new Map(); // ch -> { name, role, persona, send (float), on }
+  // Todos os 32 canais existem (como na mesa real). Os do config "tocam"; os
+  // demais ficam mudos, sem nome e com envio em -inf. O patch (nome/ícone/cor)
+  // pode ser trocado por OSC, como na mesa, para testar a checagem de patch.
+  const state = new Map(); // ch -> { name, icon, color, persona, send (float), on }
   const personas = assignPersonas(channels);
-  for (const c of channels) {
-    const persona = personas.get(c.ch);
-    const db = MESSY[persona] ?? 0;
-    state.set(c.ch, { name: c.name, role: c.role, persona, send: dbToFader(db), on: 1 });
+  for (let ch = 1; ch <= CHANNEL_COUNT; ch++) {
+    const c = channels.find((x) => x.ch === ch);
+    const persona = c ? personas.get(ch) : 'Mudo';
+    const db = c ? MESSY[persona] ?? 0 : -90;
+    state.set(ch, { name: c?.name ?? '', icon: PERSONA_ICON[persona] ?? X32_ICONS.empty, color: 0, persona, send: dbToFader(db), on: 1 });
   }
   let busFader = dbToFader(0);
   const remote = new Map(); // "addr:port" -> último /xremote
@@ -72,9 +84,15 @@ export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
       meterSubs.set(`${key}|${args[0]}`, Date.now());
     } else if ((m = address.match(/^\/bus\/(\d\d)\/config\/name$/))) {
       reply(rinfo, address, [SIM_BUS_NAMES[+m[1] - 1] ?? '']);
-    } else if ((m = address.match(/^\/ch\/(\d\d)\/config\/name$/))) {
+    } else if ((m = address.match(/^\/ch\/(\d\d)\/config\/(name|icon|color)$/))) {
       const s = state.get(+m[1]);
-      reply(rinfo, address, [s ? s.name : `Ch ${m[1]}`]);
+      if (!s) return;
+      const field = m[2];
+      const wrap = (v) => (field === 'name' ? v : { type: 'i', value: v });
+      if (args.length && (field === 'name' ? typeof args[0] === 'string' : Number.isInteger(args[0]))) {
+        s[field] = args[0];
+        broadcast(key, address, [wrap(s[field])]);
+      } else reply(rinfo, address, [wrap(s[field])]);
     } else if ((m = address.match(/^\/ch\/(\d\d)\/mix\/(\d\d)\/(level|on)$/))) {
       const s = state.get(+m[1]);
       if (!s || m[2] !== busStr) return;
@@ -168,6 +186,15 @@ export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
       resolve({
         port: sock.address().port,
         state,
+        // Troca de patch (como se o técnico renomeasse o canal na mesa).
+        setPatch(ch, { name, icon, color } = {}) {
+          const s = state.get(ch);
+          if (!s) return;
+          const n = pad2(ch);
+          if (name != null) { s.name = name; broadcast(null, `/ch/${n}/config/name`, [name]); }
+          if (icon != null) { s.icon = icon; broadcast(null, `/ch/${n}/config/icon`, [{ type: 'i', value: icon }]); }
+          if (color != null) { s.color = color; broadcast(null, `/ch/${n}/config/color`, [{ type: 'i', value: color }]); }
+        },
         // O simulador só tem um bus "vivo": acompanha a troca feita no app.
         setBus(b) {
           bus = b;

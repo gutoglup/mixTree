@@ -2,11 +2,13 @@
 
 Assistente de mix de fone (monitor) para mesas digitais Behringer **X32 / M32**. O projeto contém uma única aplicação, `mix-assist`: um processo Node.js que se comunica com a mesa via **OSC sobre UDP**, ajusta os envios dos canais para o bus do fone e serve uma interface web acessível pela rede local (Mac, iPhone ou outro navegador).
 
-O objetivo é manter a mix do fone do tecladista organizada durante a execução ao vivo:
+O objetivo é manter a mix do fone de um músico (por padrão, o tecladista) organizada durante a execução ao vivo:
 
 1. **Detecção de solista** entre os canais de voz.
 2. **Vozes como referência**: backings em envio fixo (−10 dB por padrão) e solista acompanhando o teclado, com teto absoluto de envio (−8 dB por padrão).
-3. **Teto por instrumento em relação ao teclado**: quando um instrumento ultrapassa o seu limite, o envio dele é reduzido. O motor nunca aumenta instrumentos nem altera o teclado.
+3. **Teto por instrumento em relação à âncora** (o instrumento do dono do fone; o teclado, por padrão): quando um instrumento ultrapassa o seu limite, o envio dele é reduzido. O motor nunca aumenta instrumentos nem altera a âncora.
+
+O mapa de canais pode ser **detectado pela mesa** (nome e ícone de cada canal) e revisado pela interface; ver [Mapa de canais dinâmico](#mapa-de-canais-dinâmico).
 
 ## Sumário
 
@@ -34,6 +36,8 @@ mixTree/
     ├── config.json                    mesa, bus, mapa de canais e parâmetros do motor
     ├── README.md                      guia de uso (operador)
     ├── src/
+    │   ├── automap.js                 classificação de canais e checagem de patch (puro)
+    │   ├── configfile.js              edição do config.json preservando a formatação (puro)
     │   ├── osc.js                     codec OSC 1.0, lei de fader, blobs de meters
     │   ├── x32.js                     cliente UDP da mesa e descoberta por broadcast
     │   ├── engine.js                  motor de regras puro (sem I/O, relógio injetado)
@@ -42,7 +46,10 @@ mixTree/
     ├── public/
     │   └── index.html                 interface web (sem framework)
     └── test/
-        └── engine.test.js             testes com node:test
+        ├── engine.test.js             motor, OSC e lei de fader
+        ├── automap.test.js            classificador, sugestão, confirmação e patch
+        ├── configfile.test.js         edição do config.json
+        └── x32-sim.test.js            integração UDP cliente ↔ simulador
 ```
 
 ## Requisitos
@@ -133,10 +140,37 @@ Arquivo: `mix-assist/config.json`.
 | `bus` | Bus do fone (1–16). Atualizado automaticamente ao trocar pela interface (apenas com mesa real). |
 | `web.port` | Porta HTTP/WebSocket. `PORT` no ambiente tem precedência. |
 | `channels[].ch` | Número do canal (1–32). |
-| `channels[].role` | `keyboard` (um ou dois canais; L/R são tratados como par estéreo), `vocal` (candidatos a solista) ou `ref` (demais instrumentos). |
+| `channels[].role` | `anchor` (instrumento do dono do fone; um ou dois canais, L/R tratados como par estéreo), `vocal` (candidatos a solista) ou `ref` (demais instrumentos). `keyboard` é aceito como sinônimo de `anchor` com grupo `teclado`. |
 | `channels[].group` | Grupo do instrumento; define a cor na interface e o teto via `groupCeilingDb`. |
-| `channels[].ceilingDb` | Teto do canal em dB relativo ao teclado. Tem precedência sobre o grupo. |
+| `channels[].ceilingDb` | Teto do canal em dB relativo à âncora. Tem precedência sobre o grupo. |
+| `channels[].seen` | Gravado pela folha **Canais**: nome e ícone vistos na mesa ao confirmar o mapa. Usado para detectar troca de patch. Canais sem `seen` (config manual) não são verificados. |
+| `autoMap.rules` | Opcional. Lista de regras de nome (`{ "match": "<regex>", "role": "vocal" \| "ref" \| "ignore", "group": "..." }`) que **substitui** as regras padrão de `src/automap.js`. |
+| `autoMap.icons` | Opcional. Mapa `{ "<id do ícone>": { "role": ..., "group": ... } }` que complementa/sobrescreve a tabela padrão de ícones. |
 | `engine` | Sobrescreve qualquer parâmetro de `DEFAULTS` em `src/engine.js`. |
+
+### Mapa de canais dinâmico
+
+Em vez de escrever `channels` à mão, abra **Mesa → Detectar canais da mesa**:
+
+1. O app lê nome, ícone e cor dos 32 canais e se cada um manda para o bus do fone.
+2. Cada canal recebe uma sugestão: primeiro pelas **regras de nome** (ex.: `VOZ`, `BV` → voz; `GTR` → guitarra; `VIOLAO` → violão; `BB`, `CX`, `HH` → bateria; `PB`, `CLICK`, `FX` → fora do mapa), depois pelo **ícone** quando o nome não diz nada. Canais que já estavam no mapa com o mesmo nome mantêm o que foi decidido antes.
+3. Em **Fone de**, escolha o instrumento do dono do fone (âncora). O nome do bus (ex.: `FONE GUITARRA`) é usado como sugestão.
+4. Revise e confirme. O assistente é desligado, o mapa é aplicado sem reiniciar e gravado em `config.json` (com o simulador, só em memória).
+
+Depois disso, se o nome ou o ícone de um canal confirmado mudar na mesa (troca de patch, cena diferente), o assistente é **desligado e bloqueado** e a página mostra o que mudou, com o botão **Revisar**. Ele só volta a poder ser ligado quando o mapa é confirmado de novo ou o patch volta ao que era.
+
+Regras de nome e ícones podem ser adaptados às abreviações da sua equipe em `autoMap` (ver tabela acima). Exemplo:
+
+```json
+"autoMap": {
+  "rules": [
+    { "match": "\\b(LOUVOR|MINISTRO|VOZ)", "role": "vocal" },
+    { "match": "\\b(CTB|BAIXO)", "role": "ref", "group": "baixo" },
+    { "match": "\\b(PB|CLICK)", "role": "ignore" }
+  ],
+  "icons": { "52": { "role": "vocal" } }
+}
+```
 
 ### Parâmetros do motor
 
@@ -193,9 +227,11 @@ flowchart LR
 
 ## Regras de segurança
 
-- O único endereço escrito na mesa é `/ch/NN/mix/BB/level`, em que `BB` é o bus configurado. PA, faders de canal e outros buses não são alterados.
-- O motor nunca altera os canais de teclado. O teclado só muda por ação explícita do operador na interface (card **KEYS**), que move L e R pela mesma quantidade.
-- A restrição é aplicada em duas camadas: no motor e no cliente UDP (`setSend` descarta canais fora do mapa e canais de teclado).
+- O único endereço escrito na mesa é `/ch/NN/mix/BB/level`, em que `BB` é o bus configurado. PA, faders de canal, nomes, ícones e outros buses não são alterados (o patch só é lido).
+- O motor nunca altera os canais âncora. A âncora só muda por ação explícita do operador na interface (card com o nome do grupo, ex.: **TECLADO**), que move L e R pela mesma quantidade.
+- A restrição é aplicada em duas camadas: no motor e no cliente UDP (`setSend` descarta canais fora do mapa e canais âncora).
+- A detecção de canais apenas **sugere**; o mapa só vale após confirmação. Canal não classificado fica fora do mapa e não recebe escrita.
+- Patch divergente do mapa confirmado ⇒ assistente desligado e bloqueado até revisão.
 - Qualquer alteração de envio feita fora do motor (na mesa, no Mixing Station ou na página) trava o canal por `manualHoldSec` e passa a valer como mix base daquele canal.
 
 ## Testes
@@ -204,7 +240,22 @@ flowchart LR
 cd mix-assist && npm test
 ```
 
-A suíte (`test/engine.test.js`, 22 casos, `node:test`) cobre: lei de fader, codec OSC e blobs de meters, histerese da solista, alvos de vozes e instrumentos, velocidade e etapas das rampas, imutabilidade do teclado pelo motor, trava após ajuste manual, aprovação no modo assistido, comportamento em silêncio, teclado estéreo, troca de bus e de mesa, precedência de tetos (canal → grupo → padrão) e ajuste manual do teclado.
+A suíte (`node:test`, 91 casos, sem dependências extras) cobre:
+
+- `test/engine.test.js`: lei de fader, codec OSC e blobs de meters, histerese da solista, alvos de vozes e instrumentos, velocidade e etapas das rampas, imutabilidade da âncora pelo motor, trava após ajuste manual, aprovação no modo assistido, comportamento em silêncio, âncora estéreo, troca de bus e de mesa, precedência de tetos (canal → grupo → padrão), ajuste manual da âncora, âncora de outro instrumento, sinônimo `keyboard` e bloqueio por troca de patch.
+- `test/automap.test.js`: regras de nome (com e sem acento, abreviações, fronteira de palavra), ícones, prioridade nome → ícone, regras do config, sugestão de âncora pelo nome do bus, validação do mapa, sugestão preservando decisões anteriores, confirmação (âncora, `seen`, tetos preservados) e checagem de patch.
+- `test/configfile.test.js`: gravação de `channels` no `config.json` preservando o resto do arquivo.
+- `test/x32-sim.test.js`: integração por UDP local entre `X32Client` e o simulador (leitura do patch, aviso de renomeação por `/xremote`, escrita de nome/ícone por OSC e troca de mapa com a trava da âncora).
+
+### Integração contínua
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda `npm ci` e `npm test` em `mix-assist/` no GitHub Actions:
+
+- em todo pull request (aberto, atualizado, reaberto ou marcado como pronto para revisão);
+- em push na `main`;
+- manualmente, pela aba **Actions** (`workflow_dispatch`).
+
+A suíte roda em matriz nas versões 20, 22 e 24 do Node.js (a 20 é a mínima de `engines`). Um novo push no mesmo PR cancela a execução anterior. Para impedir merge com testes quebrando, marque os checks `Testes (Node …)` como obrigatórios em **Settings → Branches → Branch protection rules** da `main`.
 
 ## Limitações conhecidas
 
@@ -213,6 +264,9 @@ A suíte (`test/engine.test.js`, 22 casos, `node:test`) cobre: lei de fader, cod
 - **Índices de meters assumidos:** os 32 primeiros valores de `/meters/1` correspondem aos canais 1–32, e o valor `bus − 1` de `/meters/2` corresponde ao bus do fone. Recomenda-se conferir no primeiro uso com a mesa real.
 - Microfones com vazamento acima de `gateDb` são considerados ativos; ajuste o parâmetro conforme o ambiente.
 - Um ajuste manual que coincida (diferença menor que 0,4 dB) com um valor enviado pelo motor nos últimos 3 s não é reconhecido como manual.
+- **A detecção de canais depende de o técnico nomear (ou pôr ícone) nos canais da mesa.** Sem nomes, a folha Canais mostra os canais como "não reconhecido" e o mapa é montado à mão nela.
+- **Numeração dos ícones a conferir:** a tabela `X32_ICONS` segue a documentação OSC não oficial da X32. Confira na sua mesa/firmware e ajuste `autoMap.icons` se necessário. Por isso o nome tem prioridade sobre o ícone.
+- Abreviações locais (ex.: "MIN" para ministro) precisam de regra própria em `autoMap.rules`.
 
 ## Documentação adicional
 
