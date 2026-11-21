@@ -22,6 +22,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - O papel `keyboard` passa a se chamar `anchor` (âncora): o instrumento do dono do fone, que o motor nunca altera e que serve de referência para os tetos. `keyboard` continua aceito como sinônimo, com grupo `teclado`. Textos da interface e motivos do motor usam o nome do grupo da âncora (ex.: "acima do limite (−8 dB do guitarra)").
 - O snapshot do motor expõe `role: "anchor"`, `anchorName` e `block`; a mensagem WebSocket `anchor` substitui `keyboard` (que segue aceita).
 
+### CI
+
+- Workflow do GitHub Actions (`.github/workflows/ci.yml`) que roda a suíte de testes do `mix-assist` em cada pull request e em push na `main`, em matriz Node.js 20, 22 e 24, com cache do npm e cancelamento de execuções antigas do mesmo PR.
+
 ### Documentação
 
 - README na raiz do repositório com estrutura, execução, configuração e parâmetros do motor.

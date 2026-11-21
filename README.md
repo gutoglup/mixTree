@@ -247,6 +247,16 @@ A suíte (`node:test`, 91 casos, sem dependências extras) cobre:
 - `test/configfile.test.js`: gravação de `channels` no `config.json` preservando o resto do arquivo.
 - `test/x32-sim.test.js`: integração por UDP local entre `X32Client` e o simulador (leitura do patch, aviso de renomeação por `/xremote`, escrita de nome/ícone por OSC e troca de mapa com a trava da âncora).
 
+### Integração contínua
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda `npm ci` e `npm test` em `mix-assist/` no GitHub Actions:
+
+- em todo pull request (aberto, atualizado, reaberto ou marcado como pronto para revisão);
+- em push na `main`;
+- manualmente, pela aba **Actions** (`workflow_dispatch`).
+
+A suíte roda em matriz nas versões 20, 22 e 24 do Node.js (a 20 é a mínima de `engines`). Um novo push no mesmo PR cancela a execução anterior. Para impedir merge com testes quebrando, marque os checks `Testes (Node …)` como obrigatórios em **Settings → Branches → Branch protection rules** da `main`.
+
 ## Limitações conhecidas
 
 - **Os meters fornecem nível, não espectro.** O motor equilibra volume; não trata mascaramento de frequência.
