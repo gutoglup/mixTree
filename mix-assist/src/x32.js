@@ -166,8 +166,9 @@ export class X32Client extends EventEmitter {
 }
 
 // Procura mesas X32/M32 na rede: manda /info em broadcast e junta quem responder.
-export function scanMixers({ port = 10023, timeoutMs = 1500 } = {}) {
-  const targets = new Set(['255.255.255.255']);
+// `hosts`: endereços extras para perguntar diretamente (ex.: 127.0.0.1 nos testes).
+export function scanMixers({ port = 10023, timeoutMs = 1500, hosts = [] } = {}) {
+  const targets = new Set(['255.255.255.255', ...hosts]);
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list || []) {
       if (i.family !== 'IPv4' || i.internal) continue;
