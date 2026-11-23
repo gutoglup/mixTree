@@ -47,3 +47,64 @@ jobs:
 
       - name: Rodar testes
         run: npm test
+
+  coverage:
+    name: Cobertura de testes (mínimo 80%)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: mix-assist
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mix-assist/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Limites em mix-assist/.c8rc.json (linhas, statements, funções e branches ≥ 80%).
+      # Abaixo disso o c8 sai com erro e o job falha.
+      - name: Testes com cobertura
+        run: npm run test:coverage
+
+      - name: Resumo da cobertura
+        if: always()
+        run: |
+          [ -f coverage/coverage-summary.json ] || exit 0
+          node -e '
+            const t = require("./coverage/coverage-summary.json").total;
+            const row = (k, label) => `| ${label} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} | ${t[k].pct >= 80 ? "✅" : "❌"} |`;
+            console.log(["### Cobertura de testes (mínimo 80%)", "", "| Métrica | % | Cobertos | Status |", "|---|---|---|---|",
+              row("lines", "Linhas"), row("statements", "Statements"), row("functions", "Funções"), row("branches", "Branches")].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatório (lcov)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: mix-assist/coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Check único para a proteção da branch main: só passa se testes (todas as
+  # versões do Node) e cobertura passarem. Marque "CI ok" como obrigatório.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [test, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir resultado dos jobs
+        run: |
+          echo "test=${{ needs.test.result }} coverage=${{ needs.coverage.result }}"
+          [ "${{ needs.test.result }}" = "success" ] && [ "${{ needs.coverage.result }}" = "success" ]

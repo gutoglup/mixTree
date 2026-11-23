@@ -16,8 +16,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
   - simulador com os 32 canais, ícones por instrumento e troca de nome/ícone por OSC (`/ch/NN/config/name` com argumento), como na mesa real.
 - Edição do `config.json` por chave de primeiro nível, sensível a strings, preservando a formatação do restante do arquivo (`src/configfile.js`).
 - Testes: classificador, sugestão, confirmação e checagem de patch (`test/automap.test.js`), edição do config (`test/configfile.test.js`), âncora genérica e bloqueio no motor, e integração UDP cliente ↔ simulador (`test/x32-sim.test.js`). Total: 91 casos.
+- Testes do app inteiro por HTTP/WebSocket contra o simulador (`test/app.test.js`), fumaça do processo `server.js` (`test/server.test.js`) e casos de borda de OSC, cliente X32, simulador e motor. Total: 129 casos, cobertura de 99% das linhas e 93% dos branches de `src/`.
 
 ### Alterado
+
+- `src/server.js` virou só o ponto de entrada; a composição (HTTP, WebSocket, motor, cliente X32, troca de mesa/bus, gravação do config) foi para `createApp` em `src/app.js`, sem efeitos ao importar e com config, caminhos, logger, scanner e intervalos injetáveis. `MIX_ASSIST_CONFIG` permite apontar outro `config.json`.
+- `scanMixers` aceita `hosts` (endereços extras além do broadcast).
+
+### Corrigido
+
+- Encerrar o servidor (Ctrl+C/SIGTERM) agora fecha sockets e timers e sai com código 0; conexões keep-alive do navegador não seguram mais o fechamento do HTTP.
+- Porta HTTP ocupada vira erro de `listen` em vez de exceção não tratada repassada pelo WebSocketServer.
 
 - O papel `keyboard` passa a se chamar `anchor` (âncora): o instrumento do dono do fone, que o motor nunca altera e que serve de referência para os tetos. `keyboard` continua aceito como sinônimo, com grupo `teclado`. Textos da interface e motivos do motor usam o nome do grupo da âncora (ex.: "acima do limite (−8 dB do guitarra)").
 - O snapshot do motor expõe `role: "anchor"`, `anchorName` e `block`; a mensagem WebSocket `anchor` substitui `keyboard` (que segue aceita).
@@ -25,6 +34,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 ### CI
 
 - Workflow do GitHub Actions (`.github/workflows/ci.yml`) que roda a suíte de testes do `mix-assist` em cada pull request e em push na `main`, em matriz Node.js 20, 22 e 24, com cache do npm e cancelamento de execuções antigas do mesmo PR.
+- Job **Cobertura de testes (mínimo 80%)**: roda `npm run test:coverage` (c8 sobre todo o `src/`) e falha se linhas, statements, funções ou branches ficarem abaixo de 80% (`mix-assist/.c8rc.json`); publica o resumo na página do run e o relatório lcov como artefato.
+- Job **CI ok**: check único que só passa com testes e cobertura verdes, para ser marcado como obrigatório na proteção da `main`.
 
 ### Documentação
 

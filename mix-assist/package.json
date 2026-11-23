@@ -4,13 +4,19 @@
   "description": "Assistente de mix de fone para Behringer X32/M32 via OSC",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "sim": "node src/server.js --sim",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:coverage": "c8 node --test test/*.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "c8": "^12.0.0"
   }
 }

@@ -36,7 +36,8 @@ Precisa do Node 20 ou mais novo.
 
 ```bash
 npm install
-npm test          # 22 testes do motor e do OSC
+npm test                # suíte completa (129 casos)
+npm run test:coverage   # suíte + cobertura (mínimo 80%)
 npm run sim       # X32 falsa em 127.0.0.1, para testar em casa
 npm start         # mesa real (IP e Bus do config.json)
 ```
@@ -128,7 +129,7 @@ A contribuição de cada canal no fone é **nível de entrada (meter) + envio pa
  │ src/x32.js     cliente UDP (EventEmitter)         │
  │ src/osc.js     codec OSC, lei de fader, meters    │
  │ src/engine.js  motor PURO (tick a cada 250 ms)    │
- │ src/server.js  HTTP estático + WebSocket :3000    │
+ │ src/app.js     HTTP estático + WebSocket :3000    │
  └───────────────────────▲───────────────────────────┘
                          │ WebSocket (estado a cada 150 ms)
               public/index.html  (Mac / iPhone)

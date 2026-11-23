@@ -42,14 +42,18 @@ mixTree/
     │   ├── x32.js                     cliente UDP da mesa e descoberta por broadcast
     │   ├── engine.js                  motor de regras puro (sem I/O, relógio injetado)
     │   ├── simulator.js               mesa simulada para desenvolvimento
-    │   └── server.js                  composição: HTTP, WebSocket e laços de execução
+    │   ├── app.js                     composição (createApp): HTTP, WebSocket e laços de execução
+    │   └── server.js                  ponto de entrada: lê o config.json e sobe o app
     ├── public/
     │   └── index.html                 interface web (sem framework)
     └── test/
         ├── engine.test.js             motor, OSC e lei de fader
         ├── automap.test.js            classificador, sugestão, confirmação e patch
         ├── configfile.test.js         edição do config.json
-        └── x32-sim.test.js            integração UDP cliente ↔ simulador
+        ├── osc.test.js                casos de borda do codec OSC e da lei de fader
+        ├── x32-sim.test.js            integração UDP cliente ↔ simulador
+        ├── app.test.js                integração HTTP + WebSocket + motor + mesa simulada
+        └── server.test.js             fumaça do ponto de entrada (processo real)
 ```
 
 ## Requisitos
@@ -216,7 +220,7 @@ flowchart LR
   M[X32 / M32<br/>UDP 10023] <-- OSC --> C[x32.js<br/>X32Client]
   C -- eventos --> E[engine.js<br/>MixEngine]
   E -- "ações {ch, db}" --> C
-  S[server.js] -. "tick 250 ms" .-> E
+  S[app.js] -. "tick 250 ms" .-> E
   S -- "estado 150 ms (WebSocket)" --> U[index.html]
   U -- comandos JSON --> S
   SIM[simulator.js] -. "--sim" .- C
@@ -238,15 +242,23 @@ flowchart LR
 ## Testes
 
 ```bash
-cd mix-assist && npm test
+cd mix-assist && npm test               # suíte completa
+cd mix-assist && npm run test:coverage  # suíte + cobertura (falha abaixo de 80%)
 ```
 
-A suíte (`node:test`, 91 casos, sem dependências extras) cobre:
+A suíte (`node:test`, 129 casos, < 1 s) cobre:
 
 - `test/engine.test.js`: lei de fader, codec OSC e blobs de meters, histerese da solista, alvos de vozes e instrumentos, velocidade e etapas das rampas, imutabilidade da âncora pelo motor, trava após ajuste manual, aprovação no modo assistido, comportamento em silêncio, âncora estéreo, troca de bus e de mesa, precedência de tetos (canal → grupo → padrão), ajuste manual da âncora, âncora de outro instrumento, sinônimo `keyboard` e bloqueio por troca de patch.
 - `test/automap.test.js`: regras de nome (com e sem acento, abreviações, fronteira de palavra), ícones, prioridade nome → ícone, regras do config, sugestão de âncora pelo nome do bus, validação do mapa, sugestão preservando decisões anteriores, confirmação (âncora, `seen`, tetos preservados) e checagem de patch.
 - `test/configfile.test.js`: gravação de `channels` no `config.json` preservando o resto do arquivo.
-- `test/x32-sim.test.js`: integração por UDP local entre `X32Client` e o simulador (leitura do patch, aviso de renomeação por `/xremote`, escrita de nome/ícone por OSC e troca de mapa com a trava da âncora).
+- `test/osc.test.js`: tipos OSC explícitos e inválidos, pacotes sem tags ou com tag desconhecida, todos os trechos da lei de fader e blobs de meters truncados.
+- `test/x32-sim.test.js`: integração por UDP local entre `X32Client` e o simulador (leitura do patch, aviso de renomeação por `/xremote`, escrita de nome/ícone por OSC, troca de mapa com a trava da âncora, `scanMixers`, troca de mesa e de bus, meters e todos os papéis simulados).
+- `test/app.test.js`: o app inteiro (`createApp`) contra um simulador fazendo papel de mesa real, com `config.json` temporário: HTTP estático (MIME, 404, path traversal), estado e comandos por WebSocket, envios e âncora, bloqueio por troca de patch e revisão do mapa, ajuste de solista, troca de bus e de mesa (o que grava e o que não grava no config), procura de mesas, mensagens de erro de rede e falhas ao salvar.
+- `test/server.test.js`: sobe `node src/server.js --sim` como processo, abre a página e confere a saída limpa com `SIGTERM`.
+
+### Cobertura
+
+A cobertura é medida com [c8](https://github.com/bcoe/c8) sobre todos os arquivos de `src/` (inclusive os que nenhum teste importa). Os limites ficam em [`mix-assist/.c8rc.json`](mix-assist/.c8rc.json): **linhas, statements, funções e branches ≥ 80%**. Abaixo disso, `npm run test:coverage` sai com erro. O relatório HTML fica em `mix-assist/coverage/lcov-report/index.html` (ignorado pelo git).
 
 ### Integração contínua
 
@@ -256,7 +268,13 @@ O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda `npm ci` 
 - em push na `main`;
 - manualmente, pela aba **Actions** (`workflow_dispatch`).
 
-A suíte roda em matriz nas versões 20, 22 e 24 do Node.js (a 20 é a mínima de `engines`). Um novo push no mesmo PR cancela a execução anterior. Para impedir merge com testes quebrando, marque os checks `Testes (Node …)` como obrigatórios em **Settings → Branches → Branch protection rules** da `main`.
+| Job | O que faz |
+|---|---|
+| `Testes (Node 20/22/24)` | `npm test` em matriz (a 20 é a mínima de `engines`) |
+| `Cobertura de testes (mínimo 80%)` | `npm run test:coverage` no Node 24; falha abaixo de 80%, escreve o resumo na página do run e publica o relatório lcov como artefato `coverage-report` |
+| `CI ok` | só passa se todos os jobs acima passarem: é o check único para a proteção da branch |
+
+Um novo push no mesmo PR cancela a execução anterior. Para impedir merge sem testes ou com cobertura abaixo de 80%, marque o check **`CI ok`** como obrigatório em **Settings → Branches → Branch protection rules** (ou **Rulesets**) da `main`.
 
 ## Limitações conhecidas
 

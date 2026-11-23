@@ -3,9 +3,9 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import dgram from 'node:dgram';
-import { X32Client } from '../src/x32.js';
+import { X32Client, scanMixers } from '../src/x32.js';
 import { startSimulator, CHURCH_EXTRA_PATCH } from '../src/simulator.js';
-import { encode, decode, dbToFader } from '../src/osc.js';
+import { encode, decode, dbToFader, decodeMeterBlob } from '../src/osc.js';
 import { X32_ICONS } from '../src/automap.js';
 
 const MAP = [
@@ -132,6 +132,147 @@ test('patch da igreja: fala, violão e overs têm papel; canais fora do mapa gan
     assert.equal(s.state.get(31).name, 'PR FABIO');
     assert.ok(s.state.get(31).send < dbToFader(-80), 'fora do mapa fica sem envio');
   } finally {
+    s.stop();
+  }
+});
+
+// Socket UDP avulso para falar OSC direto com o simulador.
+async function rawClient() {
+  const sock = dgram.createSocket('udp4');
+  await new Promise((r) => sock.bind(0, '127.0.0.1', r));
+  const to = (s) => (addr, args = []) => sock.send(encode(addr, args), s.port, '127.0.0.1');
+  const next = (match = () => true, ms = 1000) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => { sock.off('message', on); reject(new Error('timeout')); }, ms);
+    const on = (buf) => {
+      const m = decode(buf);
+      if (!match(m)) return;
+      clearTimeout(t);
+      sock.off('message', on);
+      resolve(m);
+    };
+    sock.on('message', on);
+  });
+  return { sock, to, next };
+}
+
+test('scanMixers acha o simulador por endereço direto e ignora lixo', async () => {
+  const found = await scanMixers({ port: sim.port, timeoutMs: 300, hosts: ['127.0.0.1'] });
+  const mine = found.find((f) => f.host === '127.0.0.1');
+  assert.deepEqual(mine, { host: '127.0.0.1', port: sim.port, name: 'X32 SIM', model: 'X32', fw: '4.06' });
+});
+
+test('cliente: pacote inválido vira evento de erro; sem socket nada é enviado', async () => {
+  const c = client();
+  c.send('/info'); // antes do start: ignorado
+  c.start();
+  await once(c, 'icon');
+  const port = c.socket.address().port;
+  const { sock } = await rawClient();
+  const err = once(c, 'error');
+  sock.send(Buffer.concat([Buffer.from('/a\0\0'), Buffer.from(',q\0\0')]), port, '127.0.0.1');
+  assert.match((await err)[0].message, /Tag OSC não suportada/);
+  sock.close();
+  c.stop();
+  assert.equal(c.socket, null);
+  c.send('/info'); // parado: não explode
+});
+
+test('cliente: info, fader e meters do bus, troca de bus e de mesa', async () => {
+  const c = client();
+  const fader = once(c, 'busFader');
+  const meters = once(c, 'channelMeters');
+  const busMeter = once(c, 'busMeter');
+  c.start();
+  assert.ok(Math.abs((await fader)[0]) < 0.05, 'fader do bus em ~0 dB (quantizado em 1023 passos)');
+  assert.equal((await meters)[0].length, 32);
+  assert.equal(typeof (await busMeter)[0], 'number');
+  assert.deepEqual(c.info, { name: 'X32 SIM', model: 'X32', fw: '4.06' });
+  assert.ok(c.connected);
+
+  c.setSend(1, NaN); // ignorado
+  c.setKeyboardSend(15, NaN); // ignorado
+
+  const other = await startSimulator({ port: 0, bus: 2, channels: MAP });
+  try {
+    c.setTarget('127.0.0.1', other.port);
+    assert.equal(c.info, null);
+    assert.equal(c.connected, false);
+    await collect(c, ['name'], (g) => g.length >= 1);
+    assert.equal(c.port, other.port);
+
+    c.setBus(3); // bus que o simulador não tem: respostas de nível são do bus 2 e são descartadas
+    assert.equal(c.busStr, '03');
+  } finally {
+    other.stop();
+  }
+});
+
+test('simulador: escrita de on/fader, bus errado, canal inexistente e pacote quebrado', async () => {
+  const s = await startSimulator({ port: 0, bus: 4, channels: MAP });
+  const { sock, to, next } = await rawClient();
+  const send = to(s);
+  try {
+    sock.send(Buffer.from('lixo'), s.port, '127.0.0.1'); // ignorado
+    send('/xremote');
+    send('/ch/01/mix/04/on', [{ type: 'i', value: 0 }]);
+    send('/bus/04/mix/fader', [0.5]);
+    send('/ch/01/mix/03/level', [0.1]); // bus errado: ignorado
+    send('/ch/40/mix/04/level', [0.1]); // canal inexistente
+    send('/ch/40/config/name');
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(s.state.get(1).on, 0);
+    send('/ch/01/mix/04/on');
+    assert.deepEqual((await next((m) => m.address === '/ch/01/mix/04/on')).args, [0]);
+    send('/bus/04/mix/fader');
+    assert.deepEqual((await next((m) => m.address === '/bus/04/mix/fader')).args, [0.5]);
+    send('/bus/16/config/name');
+    assert.deepEqual((await next((m) => m.address === '/bus/16/config/name')).args, ['FX 4']);
+
+    // Patch trocado "na mesa" chega a quem pediu /xremote
+    const icon = next((m) => m.address === '/ch/17/config/icon');
+    const color = next((m) => m.address === '/ch/17/config/color');
+    s.setPatch(17, { icon: 5, color: 3 });
+    assert.deepEqual((await icon).args, [5]);
+    assert.deepEqual((await color).args, [3]);
+    s.setPatch(99, { name: 'x' }); // fora da mesa: ignorado
+
+    s.setBus(6);
+    send('/ch/01/mix/06/level');
+    assert.ok((await next((m) => m.address === '/ch/01/mix/06/level')).args[0] >= 0);
+  } finally {
+    sock.close();
+    s.stop();
+  }
+});
+
+test('simulador: cada papel do mapa "toca" (meters com sinal) e a assinatura expira', async () => {
+  const channels = [
+    { ch: 1, role: 'anchor', group: 'teclado', name: 'KEYS' },
+    ...[2, 3, 4, 5, 6].map((ch) => ({ ch, role: 'vocal', name: `V${ch}` })), // a 5ª voz fica muda
+    { ch: 7, role: 'ref', group: 'bateria', name: 'BB' },
+    { ch: 8, role: 'ref', group: 'bateria', name: 'CAIXA' },
+    { ch: 9, role: 'ref', group: 'bateria', name: 'HIHAT' },
+    { ch: 10, role: 'ref', group: 'bateria', name: 'TOM 1' },
+    { ch: 11, role: 'ref', group: 'baixo', name: 'BAIXO' },
+    { ch: 12, role: 'ref', group: 'guitarra', name: 'GTR' },
+    { ch: 13, role: 'ref', group: 'violão', name: 'VIOLAO' },
+    { ch: 14, role: 'ref', group: 'fala', name: 'TALK' },
+    { ch: 15, role: 'ref', group: 'sopro', name: 'SAX' },
+  ];
+  const s = await startSimulator({ port: 0, bus: 1, channels });
+  const { sock, to, next } = await rawClient();
+  try {
+    assert.equal(s.state.get(6).persona, 'Mudo');
+    assert.equal(s.state.get(10).persona, 'Tom');
+    assert.equal(s.state.get(15).persona, 'Quieto');
+    to(s)('/meters', ['/meters/1']);
+    const m = await next((x) => x.address === '/meters/1');
+    const v = decodeMeterBlob(m.args[0]);
+    assert.equal(v.length, 96);
+    for (const ch of [1, 7, 8, 9, 11, 12, 13, 15]) assert.ok(v[ch - 1] > 0, `canal ${ch} com sinal`);
+    assert.equal(v[29], 0, 'canal fora do mapa mudo');
+  } finally {
+    sock.close();
     s.stop();
   }
 });
