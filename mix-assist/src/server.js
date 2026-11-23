@@ -221,6 +221,19 @@ async function applyMap(rows, anchorGroup) {
   return { ok: true };
 }
 
+// "Mais baixo quando for solista": vale na hora e fica gravado no canal do config
+// (só com a mesa real, como o mapa — o simulador não mexe no arquivo).
+async function setSoloOffset(ch, db) {
+  const v = engine.setSoloOffset(ch, db);
+  if (v == null) return;
+  const entry = config.channels.find((c) => c.ch === ch);
+  if (!entry || (entry.soloOffsetDb ?? 0) === v) return;
+  if (v) entry.soloOffsetDb = v;
+  else delete entry.soloOffsetDb;
+  console.log(`Ajuste de solista: ${entry.name} ${v ? `${v} dB` : 'sem ajuste'}${simulated ? ' (simulador: não salvo)' : ''}`);
+  if (!simulated) await saveConfig((text) => replaceTopLevel(text, 'channels', formatChannels(config.channels)));
+}
+
 // ---------- HTTP estático ----------
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -285,6 +298,13 @@ wss.on('connection', (ws) => {
         if (!Number.isFinite(db)) break;
         const action = engine.onUserSend(+msg.ch, db, now);
         if (action) apply([action]);
+        break;
+      }
+      case 'soloOffset': {
+        // { delta } soma ao valor atual (botões −/+); { db } define direto.
+        const cur = engine.channels.get(+msg.ch)?.soloOffsetDb ?? 0;
+        const db = msg.delta != null ? cur + Math.sign(Number(msg.delta)) : Number(msg.db);
+        if (Number.isFinite(db)) setSoloOffset(+msg.ch, db);
         break;
       }
       case 'anchor':

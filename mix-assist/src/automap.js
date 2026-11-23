@@ -204,6 +204,8 @@ export function finalizeMap(rows, anchorGroup, { patch = [], previous = [] } = {
     if (group) entry.group = group;
     const old = prev.get(r.ch);
     if (!isAnchor && role === 'ref' && Number.isFinite(old?.ceilingDb) && (old.group || '') === group) entry.ceilingDb = old.ceilingDb;
+    // Ajuste de solista é do microfone: continua enquanto o canal for voz.
+    if (role === 'vocal' && normalizeRole(old?.role) === 'vocal' && Number.isFinite(old.soloOffsetDb) && old.soloOffsetDb) entry.soloOffsetDb = old.soloOffsetDb;
     const seen = {};
     if (p.name != null) seen.name = p.name;
     if (Number.isInteger(p.icon)) seen.icon = p.icon;

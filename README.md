@@ -143,6 +143,7 @@ Arquivo: `mix-assist/config.json`.
 | `channels[].role` | `anchor` (instrumento do dono do fone; um ou dois canais, L/R tratados como par estéreo), `vocal` (candidatos a solista) ou `ref` (demais instrumentos). `keyboard` é aceito como sinônimo de `anchor` com grupo `teclado`. |
 | `channels[].group` | Grupo do instrumento; define a cor na interface e o teto via `groupCeilingDb`. |
 | `channels[].ceilingDb` | Teto do canal em dB relativo à âncora. Tem precedência sobre o grupo. |
+| `channels[].soloOffsetDb` | Só vozes. Quanto esse canal fica mais baixo quando é a solista (0 a −9 dB), por exemplo para uma voz muito aguda. Ajustado pelo botão "Como solista" ao tocar na voz; com a mesa real, é gravado aqui. |
 | `channels[].seen` | Gravado pela folha **Canais**: nome e ícone vistos na mesa ao confirmar o mapa. Usado para detectar troca de patch. Canais sem `seen` (config manual) não são verificados. |
 | `autoMap.rules` | Opcional. Lista de regras de nome (`{ "match": "<regex>", "role": "vocal" \| "ref" \| "ignore", "group": "..." }`) que **substitui** as regras padrão de `src/automap.js`. |
 | `autoMap.icons` | Opcional. Mapa `{ "<id do ícone>": { "role": ..., "group": ... } }` que complementa/sobrescreve a tabela padrão de ícones. |
