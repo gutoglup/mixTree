@@ -10,7 +10,7 @@ flowchart LR
     OSC[(Superfície OSC)]
   end
 
-  subgraph Node["Processo Node.js (src/server.js)"]
+  subgraph Node["Processo Node.js (src/server.js → src/app.js)"]
     X32[X32Client<br/>src/x32.js]
     CODEC[Codec OSC<br/>src/osc.js]
     ENG[MixEngine<br/>src/engine.js]
@@ -48,7 +48,8 @@ flowchart LR
 | `src/automap.js` | Classificação de canais por nome e ícone, sugestão de mapa, confirmação (âncora, `seen`) e checagem de troca de patch | Nenhum |
 | `src/configfile.js` | Substituição de uma chave de primeiro nível do `config.json` sensível a strings, preservando o resto do arquivo | Nenhum |
 | `src/simulator.js` | Mesa falsa que responde OSC e gera meters de uma música sintética em seções de 20 s | Rede (UDP local) |
-| `src/server.js` | Composição: liga cliente, motor, HTTP e WebSocket; troca de mesa e de bus em tempo de execução; persistência pontual em `config.json` | Rede, sistema de arquivos |
+| `src/app.js` | Composição (`createApp`): liga cliente, motor, HTTP e WebSocket; troca de mesa e de bus em tempo de execução; persistência pontual em `config.json`. Sem efeitos ao importar: config, caminhos, logger, scanner e intervalos são injetados | Rede, sistema de arquivos |
+| `src/server.js` | Ponto de entrada: lê o `config.json` (ou `MIX_ASSIST_CONFIG`), chama `createApp`, mostra os endereços e encerra limpo com SIGINT/SIGTERM | Processo |
 | `public/index.html` | Interface sem framework (HTML, CSS e JS inline) | — |
 
 ## 2. Laços de execução
@@ -57,9 +58,9 @@ O servidor mantém quatro temporizadores independentes:
 
 | Intervalo | Origem | Função |
 |---|---|---|
-| 250 ms | `server.js` | `engine.tick(now)`; as ações retornadas são enviadas à mesa |
-| 150 ms | `server.js` | Difusão do estado (`engine.snapshot`) para todos os clientes WebSocket |
-| 3 s | `server.js` | Releitura completa enquanto algum envio ainda não foi lido (perda de pacote UDP) |
+| 250 ms | `app.js` | `engine.tick(now)`; as ações retornadas são enviadas à mesa |
+| 150 ms | `app.js` | Difusão do estado (`engine.snapshot`) para todos os clientes WebSocket |
+| 3 s | `app.js` | Releitura completa enquanto algum envio ainda não foi lido (perda de pacote UDP) |
 | 8 s | `x32.js` | Renovação de `/xremote`, `/meters/1` e `/meters/2` |
 
 ```mermaid
@@ -68,7 +69,7 @@ sequenceDiagram
   participant M as X32
   participant C as X32Client
   participant E as MixEngine
-  participant S as server.js
+  participant S as app.js
   participant U as Página
 
   C->>M: /info, /xremote, /meters/1, /meters/2
@@ -225,8 +226,8 @@ O único endereço escrito em ambos os casos é `/ch/NN/mix/BB/level`, onde `BB`
 
 | Operação | Função | Efeito no motor | Persistência |
 |---|---|---|---|
-| Trocar IP ou ir para o simulador | `connectTo` (`src/server.js:92`) | `resetMixer()`: zera envios, envelopes, solista e referência do teclado; modo volta a `off` | IP e porta gravados em `config.json` (apenas mesa real) |
-| Trocar bus do fone | `setBus` (`src/server.js:134`) | `resetBus()`: zera envios e travas; modo volta a `off`; a referência do teclado é mantida | `bus` gravado em `config.json` (apenas mesa real) |
+| Trocar IP ou ir para o simulador | `connectTo` (`src/app.js:161`) | `resetMixer()`: zera envios, envelopes, solista e referência do teclado; modo volta a `off` | IP e porta gravados em `config.json` (apenas mesa real) |
+| Trocar bus do fone | `setBus` (`src/app.js:204`) | `resetBus()`: zera envios e travas; modo volta a `off`; a referência do teclado é mantida | `bus` gravado em `config.json` (apenas mesa real) |
 | Procurar mesas | `scanMixers` (`src/x32.js:144`) | — | — |
 
 A gravação em `config.json` substitui apenas o trecho alterado (por expressão regular para `mixer` e `bus`; por `replaceTopLevel` de `src/configfile.js` para `channels`), preservando a formatação do restante do arquivo.
@@ -236,7 +237,7 @@ A gravação em `config.json` substitui apenas o trecho alterado (por expressão
 ```mermaid
 sequenceDiagram
   participant U as Página
-  participant S as server.js
+  participant S as app.js
   participant X as X32Client
   participant M as Mesa
   participant A as automap.js
