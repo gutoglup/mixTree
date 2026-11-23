@@ -47,6 +47,15 @@ const round = (x, step) => Math.round(x / step) * step;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const quantize = (db) => faderToDb(dbToFader(db));
 
+// Ajuste de solista por canal: de 0 a −9 dB, em passos de 1 dB (só para baixo).
+export const SOLO_OFFSET_MIN_DB = -9;
+export function clampSoloOffset(db) {
+  const n = Math.round(Number(db));
+  if (!Number.isFinite(n)) return 0;
+  const v = clamp(n, SOLO_OFFSET_MIN_DB, 0);
+  return Object.is(v, -0) ? 0 : v;
+}
+
 export class MixEngine {
   constructor(map, opts = {}) {
     this.opts = { ...DEFAULTS, ...opts };
@@ -65,6 +74,9 @@ export class MixEngine {
           : Number.isFinite(this.opts.groupCeilingDb?.[c.group]) ? this.opts.groupCeilingDb[c.group]
           : this.opts.ceilingDb,
         name: c.name || `ch ${c.ch}`,
+        // Só vozes: quanto mais baixo esse canal fica quando é a solista (ex.: voz
+        // muito aguda que fura o fone). 0 = igual às outras.
+        soloOffsetDb: c.role === 'vocal' ? clampSoloOffset(c.soloOffsetDb) : 0,
         sendDb: null,
         on: true,
         baseDb: null,
@@ -149,6 +161,15 @@ export class MixEngine {
   setName(ch, name) {
     const c = this.channels.get(ch);
     if (c && name) c.name = name;
+  }
+
+  // Ajuste de solista de uma voz (ver clampSoloOffset). Retorna o valor aplicado,
+  // ou null se o canal não for voz.
+  setSoloOffset(ch, db) {
+    const c = this.channels.get(ch);
+    if (!c || c.role !== 'vocal') return null;
+    c.soloOffsetDb = clampSoloOffset(db);
+    return c.soloOffsetDb;
   }
 
   setSendOn(ch, on) {
@@ -471,10 +492,15 @@ export class MixEngine {
       return;
     }
     if (solo && c.ch === solo.ch && soloTarget != null) {
-      const goal = clamp(soloTarget - c.envDb, back, max);
-      const fastGoal = clamp(soloTarget - c.fastDb, back, max);
-      const note = goal >= max ? ` (no máximo de ${fmt(max)})` : '';
-      set(goal, fastGoal, `solista → acompanha o ${this.anchorName}${note}`);
+      // O ajuste do canal vem depois da faixa normal: com −3, essa solista fica
+      // sempre 3 dB abaixo de onde outra ficaria (até abaixo dos backings).
+      const off = c.soloOffsetDb;
+      const raw = clamp(soloTarget - c.envDb, back, max);
+      const goal = raw + off;
+      const fastGoal = clamp(soloTarget - c.fastDb, back, max) + off;
+      const note = raw >= max ? ` (no máximo de ${fmt(max)})` : '';
+      const offNote = off ? `, ${fmt(off)} por ser este canal` : '';
+      set(goal, fastGoal, `solista → acompanha o ${this.anchorName}${note}${offNote}`);
     } else if (solo) {
       set(back, back, `backing → ${fmt(back)}`, true);
     } else if (over) {
@@ -631,6 +657,7 @@ export class MixEngine {
           role: c.role,
           group: c.group,
           ceilingDb: c.ceilingDb,
+          soloOffsetDb: c.soloOffsetDb,
           sendDb: c.sendDb,
           baseDb: c.baseDb,
           on: c.on,

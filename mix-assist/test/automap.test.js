@@ -294,6 +294,16 @@ describe('finalizeMap', () => {
     assert.ok(!channels.some((c) => c.ch === 3));
   });
 
+  test('ajuste de solista do canal sobrevive à revisão do mapa enquanto ele for voz', () => {
+    const previous = [{ ch: 8, role: 'vocal', name: 'VOZ A', soloOffsetDb: -3 }, { ch: 7, role: 'vocal', name: 'VOZ B', soloOffsetDb: -2 }];
+    const { channels } = finalizeMap(
+      [{ ch: 9, role: 'ref', group: 'teclado' }, { ch: 8, role: 'vocal' }, { ch: 7, role: 'ref', group: 'guitarra' }],
+      'teclado', { previous },
+    );
+    assert.equal(channels.find((x) => x.ch === 8).soloOffsetDb, -3);
+    assert.equal(channels.find((x) => x.ch === 7).soloOffsetDb, undefined, 'virou instrumento: perde o ajuste');
+  });
+
   test('nome cai para o do mapa anterior e depois para "ch N"', () => {
     const { channels } = finalizeMap([{ ch: 9, role: 'ref', group: 'teclado' }, { ch: 8, role: 'vocal' }], 'teclado', { previous: [{ ch: 9, name: 'PIANO' }] });
     assert.equal(channels.find((x) => x.ch === 9).name, 'PIANO');

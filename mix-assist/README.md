@@ -74,7 +74,7 @@ O automático corrige em **etapas**, não continuamente:
 - **Corte rápido** — só para instrumento acima do teclado, e só descendo: `cutMaxMoveDb` (6) por etapa, a `cutRateDbPerSec` (2) dB/s, com `cutSettleSec` (2) de descanso. Vozes e subidas seguem as regras suaves acima.
 
 - `channels`: lista com `ch`, `role`, `name` e, opcional, `group` (bateria, guitarra, baixo...) — o grupo define a cor do card.
-  O `role` pode ser `anchor` (o instrumento do dono do fone; um ou dois canais, L/R), `vocal` (o motor escolhe a solista entre esses) ou `ref` (outros instrumentos, que só são cortados se passarem do seu teto). `keyboard` ainda vale e significa âncora do grupo `teclado`. Um `ref` pode ter `ceilingDb` próprio, que vence o do grupo.
+  O `role` pode ser `anchor` (o instrumento do dono do fone; um ou dois canais, L/R), `vocal` (o motor escolhe a solista entre esses) ou `ref` (outros instrumentos, que só são cortados se passarem do seu teto). `keyboard` ainda vale e significa âncora do grupo `teclado`. Um `ref` pode ter `ceilingDb` próprio, que vence o do grupo. Uma `vocal` pode ter `soloOffsetDb` (0 a −9): quando ela é a solista, o envio fica esse tanto mais baixo. Ajuste pelo "Como solista −/+" na barra de baixo, ao tocar na voz.
   **Não precisa escrever isso à mão:** em **Mesa → Detectar canais da mesa** o app lê o nome e o ícone de cada canal, sugere o mapa e você só confere, escolhe de quem é o fone e confirma. Se depois alguém trocar o patch na mesa, o assistente desliga sozinho e pede para revisar.
 - `autoMap` (opcional): regras de nome e ícones da sua equipe para a detecção. Detalhes no [README principal](../README.md#mapa-de-canais-dinâmico).
 - `engine`: sobrescreve qualquer parâmetro da tabela abaixo.

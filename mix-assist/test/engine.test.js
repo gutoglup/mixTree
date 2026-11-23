@@ -9,7 +9,7 @@ import {
   decodeMeterBlob,
   dbToLin,
 } from '../src/osc.js';
-import { MixEngine } from '../src/engine.js';
+import { MixEngine, clampSoloOffset } from '../src/engine.js';
 
 const MAP = [
   { ch: 9, role: 'keyboard', name: 'Teclado' },
@@ -388,4 +388,30 @@ test('bloqueio: desliga o assistente e impede religar até ser liberado', () => 
   assert.equal(e.snapshot().block, null);
   e.setMode('auto');
   assert.equal(e.mode, 'auto');
+});
+
+test('ajuste de solista por canal: essa voz fica N dB abaixo quando é a solista', () => {
+  const opts = { vocalBackingDb: -20, vocalSoloMaxDb: 0 };
+  const plain = makeEngine({}, opts);
+  const quiet = makeEngine({}, opts);
+  assert.equal(quiet.setSoloOffset(1, -3), -3);
+  for (const e of [plain, quiet]) {
+    e.setMode('auto');
+    run(e, 60, { 9: -20, 1: -20 });
+    assert.equal(e.soloist, 1);
+  }
+  assert.ok(Math.abs(send(quiet, 1) - (send(plain, 1) - 3)) < 0.6, `${send(quiet, 1)} vs ${send(plain, 1)}`);
+  assert.match(quiet.channels.get(1).reason + quiet.snapshot().channels.find((c) => c.ch === 1).soloOffsetDb, /-3/);
+});
+
+test('ajuste de solista: só vozes, de 0 a −9 dB, inteiro e vem do mapa', () => {
+  assert.equal(clampSoloOffset(-12), -9);
+  assert.equal(clampSoloOffset(2), 0);
+  assert.equal(clampSoloOffset(-2.4), -2);
+  assert.equal(clampSoloOffset('x'), 0);
+  const e = new MixEngine([...MAP.slice(0, 1), { ch: 1, role: 'vocal', name: 'Voz 1', soloOffsetDb: -4 }]);
+  assert.equal(e.channels.get(1).soloOffsetDb, -4);
+  assert.equal(e.setSoloOffset(9, -3), null, 'teclado não tem ajuste de solista');
+  const g = makeEngine();
+  assert.equal(g.setSoloOffset(23, -3), null, 'instrumento não tem ajuste de solista');
 });

@@ -133,6 +133,13 @@
   .dk-info { flex: 1; min-width: 0; }
   .dk-info b { display: block; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label2); margin-top: 2px; min-height: 26px; min-width: 0; }
+  /* "Como solista −N dB": ajuste por voz (ex.: voz aguda que fura o fone) */
+  .soloff { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--label2); }
+  .soloff button { width: 30px; height: 26px; border-radius: 8px; background: var(--fill); color: var(--label);
+    display: inline-flex; align-items: center; justify-content: center; }
+  .soloff button:disabled { opacity: .35; }
+  .soloff .sv { min-width: 44px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label); }
+  .soloff.on .sv { color: var(--orange); }
   .sub .tag { font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--label); }
   .sub .lock { display: inline-flex; align-items: center; gap: 3px; color: var(--orange); white-space: nowrap; }
   .sub .why { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -297,7 +304,13 @@
         <div class="sub"><span class="tag" id="dkTag" hidden>Solista</span>
           <span class="lock" id="dkLock" hidden><svg width="12" height="12"><use href="#i-lock"/></svg><span id="dkLt"></span></span>
           <span class="why" id="dkWhy"></span>
-          <button class="apply" id="dkApply" hidden></button></div></div>
+          <button class="apply" id="dkApply" hidden></button></div>
+        <div class="soloff" id="dkSolo" hidden>
+          <span class="lbl2">Como solista</span>
+          <button id="dsDn" aria-label="Mais baixo quando for solista"><svg width="14" height="14"><use href="#i-minus"/></svg></button>
+          <span class="sv" id="dsV">0 dB</span>
+          <button id="dsUp" aria-label="Menos baixo quando for solista"><svg width="14" height="14"><use href="#i-plus"/></svg></button>
+        </div></div>
       <div class="val"><b id="dkV"></b><small id="dkB"></small></div>
       <div class="step"><button id="dkDn" aria-label="Diminuir"><svg width="22" height="22"><use href="#i-minus"/></svg></button><i></i>
         <button id="dkUp" aria-label="Aumentar"><svg width="22" height="22"><use href="#i-plus"/></svg></button></div>
@@ -432,6 +445,13 @@
   $('dkDn').onclick = () => nudge(-1);
   $('dkUp').onclick = () => nudge(+1);
   $('dkApply').onclick = () => selected && send({ type: 'approve', ch: selected });
+  const soloNudge = (d) => {
+    const c = state?.channels.find((x) => x.ch === selected);
+    // Manda só o passo: o servidor soma ao valor atual (toques rápidos não se perdem).
+    if (c?.role === 'vocal') send({ type: 'soloOffset', ch: c.ch, delta: d });
+  };
+  $('dsDn').onclick = () => soloNudge(-1);
+  $('dsUp').onclick = () => soloNudge(+1);
 
   function select(ch) {
     selected = ch;
@@ -837,6 +857,15 @@
       $('dkB').classList.toggle('to', moving);
       setText($('dkB'), moving ? `→ ${fmt(c.target, 1, true)}` : 'dB envio');
       $('dkDn').disabled = $('dkUp').disabled = c.sendDb == null;
+      const isVoc = c.role === 'vocal';
+      $('dkSolo').hidden = !isVoc;
+      if (isVoc) {
+        const off = c.soloOffsetDb ?? 0;
+        $('dkSolo').classList.toggle('on', off !== 0);
+        setText($('dsV'), off ? `${off} dB` : '0 dB');
+        $('dsDn').disabled = off <= -9;
+        $('dsUp').disabled = off >= 0;
+      }
     }
   }
 
