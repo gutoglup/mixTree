@@ -415,3 +415,58 @@ test('ajuste de solista: só vozes, de 0 a −9 dB, inteiro e vem do mapa', () =
   const g = makeEngine();
   assert.equal(g.setSoloOffset(23, -3), null, 'instrumento não tem ajuste de solista');
 });
+
+test('solista some por mais de soloReleaseSec: solista é liberada', () => {
+  const e = makeEngine();
+  let r = run(e, 3, { 9: -20, 1: -15 });
+  assert.equal(e.soloist, 1);
+  r = run(e, 2, { 9: -20 }, r.now);
+  assert.equal(e.soloist, 1, 'pausa curta mantém a solista');
+  run(e, 6, { 9: -20 }, r.now); // ~2 s até o envelope rápido cair abaixo do gate + 4 s de espera
+  assert.equal(e.soloist, null);
+});
+
+test('envio desligado na mesa: canal não recebe alvo', () => {
+  const e = makeEngine({ 23: 5 });
+  e.setSendOn(23, 0);
+  run(e, 6, { 9: -20, 23: -12 });
+  assert.equal(e.channels.get(23).target, null);
+  assert.equal(e.channels.get(23).reason, 'envio desligado');
+  e.setSendOn(99, true); // canal fora do mapa: ignorado
+});
+
+test('voz em fim de frase (sinal caindo): não sobe o envio nessa hora', () => {
+  const e = makeEngine({ 1: -10 });
+  let r = run(e, 6, { 9: -20, 1: -15 });
+  assert.equal(e.soloist, 1);
+  r = run(e, 1, { 9: -20, 1: -38 }, r.now); // envelope rápido cai > fadeDb antes do lento
+  const c = e.channels.get(1);
+  assert.ok(e.isFading(c));
+  assert.equal(c.reason, 'sinal caindo — aguardando');
+  assert.equal(c.target, null);
+});
+
+test('bus do fone perto de clipar vira sugestão geral', () => {
+  const e = makeEngine();
+  e.setBusMeter(1); // 0 dBFS
+  const { suggestions } = e.tick(1000);
+  const bus = suggestions.find((s) => s.ch == null);
+  assert.equal(bus.name, 'Fone (Bus)');
+  assert.match(bus.reason, /bus em 0\.0 dBFS/);
+  e.setBusMeter(0.1); // −20 dBFS: sem aviso
+  assert.ok(!e.tick(1250).suggestions.some((s) => s.ch == null));
+});
+
+test('assist: primeiro tick (dt = 0) não move; nome vazio não apaga o nome', () => {
+  const e = makeEngine({ 23: 0 });
+  e.setMode('assist');
+  e.channels.get(23).approved = -3;
+  assert.deepEqual(e.tick(1000).actions, []);
+  assert.ok(e.tick(1250).actions.length > 0);
+  e.setName(23, '');
+  assert.equal(e.channels.get(23).name, 'Guitarra');
+  e.setName(99, 'x');
+  assert.equal(e.onUserSend(99, 0, 0), null);
+  assert.deepEqual(e.adjustKeyboard(0, 0), []);
+  assert.deepEqual(e.adjustKeyboard(NaN, 0), []);
+});
