@@ -69,8 +69,16 @@ describe('classifyChannel — regras de nome', () => {
   }
 
   test('playback, click e efeitos ficam de fora (ignore)', () => {
-    for (const n of ['PB L', 'PLAYBACK', 'CLICK', 'NOTE', 'FX REV', 'TALKBACK']) {
+    for (const n of ['PB L', 'PLAYBACK', 'CLICK', 'NOTE', 'FX REV']) {
       assert.equal(role(n).role, 'ignore', n);
+    }
+  });
+
+  test('talkback e off viram "fala", não bateria/baixo/teclado/voz', () => {
+    for (const n of ['TALKBACK', 'MICTALK', 'OFF BAT', 'OFF KEY', 'OFF BAIXO']) {
+      const c = role(n);
+      assert.equal(c.role, 'ref', n);
+      assert.equal(c.group, 'fala', n);
     }
   });
 

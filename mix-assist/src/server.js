@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { X32Client, BUS_COUNT, scanMixers } from './x32.js';
 import { MixEngine } from './engine.js';
-import { startSimulator } from './simulator.js';
+import { startSimulator, CHURCH_EXTRA_PATCH } from './simulator.js';
 import { CHANNEL_COUNT, DEFAULT_RULES, DEFAULT_ICONS, buildProposal, finalizeMap, diffMap, suggestAnchorGroup } from './automap.js';
 import { formatChannels, replaceTopLevel } from './configfile.js';
 
@@ -22,7 +22,7 @@ let sim = null;
 async function ensureSim() {
   if (!sim) {
     // Porta 0 = o sistema escolhe; assim dois servidores podem ter simulador ao mesmo tempo.
-    sim = await startSimulator({ port: 0, bus: config.bus, channels: config.channels });
+    sim = await startSimulator({ port: 0, bus: config.bus, channels: config.channels, extraPatch: CHURCH_EXTRA_PATCH });
     console.log(`Simulador X32 rodando em 127.0.0.1:${sim.port}`);
   }
   sim.setBus(config.bus);

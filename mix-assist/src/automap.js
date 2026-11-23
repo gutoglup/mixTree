@@ -20,7 +20,11 @@ export const DEFAULT_ANCHOR_GROUP = 'teclado';
 // já sem acentos e em maiúsculas. Termina em (?![A-Z]) e não em \b para
 // que "VOZ1" e "GTR2" também casem. role "ignore" = deixa o canal de fora do mapa.
 export const DEFAULT_RULES = [
-  { match: '\\b(PB|PLAYBACK|CLICK|CLIQUE|TRACKS?|VS|PC|NOTE|NOTEBOOK|MAC|VIDEO|YOUTUBE|TALK|TALKBACK|FX|REV|DLY|DELAY)(?![A-Z])', role: 'ignore' },
+  // Talkback e "off" (mic de fala dos músicos: OFF BAT, OFF KEY…) vêm antes de tudo,
+  // senão "OFF BAT" cairia em bateria e "OFF BAIXO" em baixo. Não são candidatos a
+  // solista: entram como instrumento do grupo "fala", só com teto.
+  { match: '\\b(OFF|TALK|TALKBACK|MICTALK|TB)(?![A-Z])', role: 'ref', group: 'fala' },
+  { match: '\\b(PB|PLAYBACK|CLICK|CLIQUE|TRACKS?|VS|PC|NOTE|NOTEBOOK|MAC|VIDEO|YOUTUBE|FX|REV|DLY|DELAY)(?![A-Z])', role: 'ignore' },
   { match: '\\b(VOZ|VOZES|VOX|VOC|VOCAL|BV|BACK|BACKING|CORO|CHOIR|LEAD)(?![A-Z])', role: 'vocal' },
   { match: '\\b(KEYS?|KB|KBD|TECL|TECLADO|PIANO|PNO|SYNTH|ORG|ORGAO|ORGAN|RHODES|WURLI)', role: 'ref', group: 'teclado' },
   { match: '\\b(VIOLINO|VIOLIN|VLN|CELLO|VIOLONCELO|STRINGS|CORDAS)', role: 'ref', group: 'cordas' },
