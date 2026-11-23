@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import dgram from 'node:dgram';
 import { X32Client } from '../src/x32.js';
-import { startSimulator } from '../src/simulator.js';
+import { startSimulator, CHURCH_EXTRA_PATCH } from '../src/simulator.js';
 import { encode, decode, dbToFader } from '../src/osc.js';
 import { X32_ICONS } from '../src/automap.js';
 
@@ -108,4 +108,30 @@ test('setChannels troca o mapa: âncora nova protegida, canal novo liberado', as
   assert.equal(writes.length, 3);
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(Math.abs(sim.state.get(20).send - dbToFader(-5)) < 1e-6, 'float32 do OSC');
+});
+
+test('patch da igreja: fala, violão e overs têm papel; canais fora do mapa ganham nome real', async () => {
+  const s = await startSimulator({
+    port: 0, bus: 2, extraPatch: CHURCH_EXTRA_PATCH,
+    channels: [
+      { ch: 15, role: 'keyboard', name: 'KEYS L' },
+      { ch: 9, role: 'ref', group: 'bateria', name: 'Over L' },
+      { ch: 13, role: 'ref', group: 'violão', name: 'VIOLAO' },
+      { ch: 11, role: 'ref', group: 'fala', name: 'OFF BAT' },
+      { ch: 19, role: 'ref', group: 'fala', name: 'TALKBACK' },
+    ],
+  });
+  try {
+    assert.equal(s.state.get(9).persona, 'Prato');
+    assert.equal(s.state.get(13).persona, 'Violao');
+    assert.equal(s.state.get(11).persona, 'Fala 0');
+    assert.equal(s.state.get(19).persona, 'Fala 1');
+    assert.equal(s.state.get(11).icon, X32_ICONS.empty, 'fala não pode ter ícone de voz');
+    assert.equal(s.state.get(21).name, 'CLICK');
+    assert.equal(s.state.get(21).persona, 'Mudo');
+    assert.equal(s.state.get(31).name, 'PR FABIO');
+    assert.ok(s.state.get(31).send < dbToFader(-80), 'fora do mapa fica sem envio');
+  } finally {
+    s.stop();
+  }
 });

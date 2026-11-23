@@ -12,32 +12,58 @@ const VOCAL_PERSONAS = ['Voz 1', 'Voz 2', 'Voz 3', 'Voz 4'];
 
 // Cada canal do config ganha um "papel" na música simulada. Instrumentos usam o
 // "group" do config (bateria toca como bateria, guitarra como guitarra...).
-const DRUM_PERSONAS = ['Bumbo', 'Caixa', 'Prato'];
+// Na bateria o nome decide a peça (BB → bumbo, CAIXA → caixa, HIHAT/Over → prato);
+// o que sobra (toms, surdos) entra de vez em quando.
+function drumPersona(name) {
+  const n = String(name ?? '').toUpperCase();
+  if (/\b(BB|BUMBO|KICK|BD)\b/.test(n)) return 'Bumbo';
+  if (/\b(CAIXA|SNARE|CX)\b/.test(n)) return 'Caixa';
+  if (/\b(HIHAT|HH|OVER|OH|RIDE|PRATO)/.test(n)) return 'Prato';
+  return 'Tom';
+}
 function assignPersonas(channels) {
-  let vocal = 0, drum = 0;
+  let vocal = 0, fala = 0;
   const out = new Map();
   for (const c of channels) {
     let p = 'Quieto';
     if (normalizeRole(c.role) === 'anchor') p = 'Teclado';
     else if (c.role === 'vocal') p = VOCAL_PERSONAS[vocal++] ?? 'Mudo';
-    else if (c.group === 'bateria') p = DRUM_PERSONAS[drum++] ?? 'Quieto';
+    else if (c.group === 'bateria') p = drumPersona(c.name);
     else if (c.group === 'baixo') p = 'Baixo';
     else if (c.group === 'guitarra') p = 'Guitarra';
+    else if (c.group === 'violão') p = 'Violao';
+    else if (c.group === 'fala') p = `Fala ${fala++}`;
     out.set(c.ch, p);
   }
   return out;
 }
 
+// Canais da M32 da igreja que ficam FORA do mapa (lidos da mesa em 2026-11-22).
+// O server passa isto ao simulador para a tela de mapa ver o mesmo patch da mesa
+// real. Ficam mudos e sem envio, como estão no fone.
+export const CHURCH_EXTRA_PATCH = [
+  { ch: 6, name: 'EFEITO', icon: 29 },
+  { ch: 21, name: 'CLICK', icon: 12 },
+  { ch: 29, name: 'AMB L', icon: 46 },
+  { ch: 30, name: 'AMB R', icon: 45 },
+  { ch: 31, name: 'PR FABIO', icon: 50 },
+  { ch: 32, name: 'MIC HEAD SET', icon: 50 },
+];
+
 // Ícone que cada papel simulado mostra na mesa (para testar a detecção por ícone).
 const PERSONA_ICON = {
   Teclado: X32_ICONS.keyboard, 'Voz 1': X32_ICONS.femaleVocal, 'Voz 2': X32_ICONS.maleVocal,
   'Voz 3': X32_ICONS.handheldMic, 'Voz 4': X32_ICONS.handheldMic, Bumbo: X32_ICONS.kickFront,
-  Caixa: X32_ICONS.snareTop, Prato: X32_ICONS.hiHat, Baixo: X32_ICONS.electricBass, Guitarra: X32_ICONS.lesPaul,
+  Caixa: X32_ICONS.snareTop, Prato: X32_ICONS.hiHat, Tom: X32_ICONS.midTom, Baixo: X32_ICONS.electricBass,
+  Guitarra: X32_ICONS.lesPaul, Violao: X32_ICONS.acousticGuitar,
+  // Fala fica sem ícone: na mesa real os offs usam ícones de mic, que o mapa
+  // automático leria como voz. Quem classifica fala é o nome.
 };
 
 const SIM_BUS_NAMES = ['MON 1', 'MON 2', 'BATERA', 'BAIXO', 'TECLADO', 'VS 1', 'VS 2', 'IEM BAT', '', '', '', '', 'FX 1', 'FX 2', 'FX 3', 'FX 4'];
 
-export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
+// extraPatch: nome/ícone de canais fora do mapa (ver CHURCH_EXTRA_PATCH).
+export function startSimulator({ port = 10023, bus = 5, channels = [], extraPatch = [] } = {}) {
   let busStr = pad2(bus);
   const sock = dgram.createSocket('udp4');
   const t0 = Date.now();
@@ -48,9 +74,12 @@ export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
   const personas = assignPersonas(channels);
   for (let ch = 1; ch <= CHANNEL_COUNT; ch++) {
     const c = channels.find((x) => x.ch === ch);
+    const extra = c ? null : extraPatch.find((x) => x.ch === ch);
     const persona = c ? personas.get(ch) : 'Mudo';
     const db = c ? MESSY[persona] ?? 0 : -90;
-    state.set(ch, { name: c?.name ?? '', icon: PERSONA_ICON[persona] ?? X32_ICONS.empty, color: 0, persona, send: dbToFader(db), on: 1 });
+    const name = c?.name ?? extra?.name ?? '';
+    const icon = extra?.icon ?? PERSONA_ICON[persona] ?? X32_ICONS.empty;
+    state.set(ch, { name, icon, color: 0, persona, send: dbToFader(db), on: 1 });
   }
   let busFader = dbToFader(0);
   const remote = new Map(); // "addr:port" -> último /xremote
@@ -140,14 +169,23 @@ export function startSimulator({ port = 10023, bus = 5, channels = [] } = {}) {
         return -22 + wob(2, 3);
       case 'Prato':
         return -26 + wob(3, 3);
+      case 'Tom':
+        return inSec % 4 > 3.4 ? -24 + wob(2, 3) : null; // virada no fim do compasso
       case 'Baixo':
         return -19 + wob(0.5, 1.5);
+      case 'Violao':
+        return -24 + wob(0.6, 1.5);
       case 'Guitarra':
         return inSec >= SECTION_SEC / 2 ? -10 + wob(0.8, 2) : -28 + wob(0.8, 2);
       case 'Quieto':
         return -32 + wob(0.5, 2);
-      default:
-        return null;
+      default: {
+        // Fala (talkback/off): um canal por vez fala ~3 s a cada 12 s, em rodízio.
+        const f = /^Fala (\d+)$/.exec(c.persona);
+        if (!f) return null;
+        const turn = Math.floor(t / 12) % 5;
+        return turn === +f[1] % 5 && t % 12 < 3 ? -14 + wob(4, 4) : null;
+      }
     }
   }
 
