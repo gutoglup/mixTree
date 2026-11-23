@@ -22,3 +22,11 @@ for (const list of Object.values(os.networkInterfaces())) {
   }
 }
 console.log('');
+
+// Ctrl+C / kill: fecha sockets e timers antes de sair.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.once(sig, async () => {
+    await app.close();
+    process.exit(0);
+  });
+}

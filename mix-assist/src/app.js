@@ -284,6 +284,8 @@ export async function createApp({
 
   // ---------- WebSocket ----------
   const wss = new WebSocketServer({ server });
+  // O ws repassa os erros do servidor HTTP (ex.: porta ocupada); quem trata é listen().
+  wss.on('error', () => {});
 
   // Uma mensagem da página. Retorna a promessa da operação assíncrona, se houver
   // (o servidor não espera; os testes sim).
@@ -416,7 +418,11 @@ export async function createApp({
       sim = null;
       for (const c of wss.clients) c.terminate();
       wss.close();
-      if (server.listening) await new Promise((r) => server.close(r));
+      if (server.listening) {
+        const closed = new Promise((r) => server.close(r));
+        server.closeAllConnections(); // keep-alive do navegador seguraria o close() para sempre
+        await closed;
+      }
     },
   };
 }
